@@ -24,6 +24,12 @@ jobs:
         with:
           node-version: 22
       - run: npm test
+      - name: Make sure no Google API key is committed
+        run: |
+          if grep -rnE 'AIza[0-9A-Za-z_-]{35}' --exclude-dir=.git .; then
+            echo "::error::A Google API key is committed. Remove it and use the GOOGLE_MAPS_API_KEY secret."
+            exit 1
+          fi
 
   deploy:
     needs: test
@@ -36,6 +42,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Collect site files
         run: mkdir _site && cp -r index.html styles.css config.js src _site/
+      - name: Add API key from repository secret
+        env:
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+        run: node scripts/inject-key.mjs _site/config.js
       - uses: actions/upload-pages-artifact@v3
       - id: deployment
         uses: actions/deploy-pages@v4

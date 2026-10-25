@@ -27,9 +27,9 @@ Geolocation only works on `https://` or `http://localhost`.
    - Application restriction: **Websites** → `https://<your-user>.github.io/*` (plus `http://localhost:8000/*` for development).
    - API restriction: only the two APIs above.
    - Cap usage so you stay in the free allowance: open **Google Maps Platform → Quotas** (or **IAM & Admin → Quotas & System Limits**), pick **Places API (New)**, and set the per-day Nearby Search limit to about **30**. Requests above the cap fail instead of being billed.
-4. Put the key in `config.js`, or paste it in the app under *Google Maps API key* (stored only in that browser).
+4. **Don't commit the key.** Add it as a repository secret named `GOOGLE_MAPS_API_KEY` (**Settings → Secrets and variables → Actions**). The deploy workflow writes it into the published `config.js` only, and CI fails if a key is ever committed. For local development, paste the key in the app under *Google Maps API key* (stored only in that browser).
 
-Visitors can always see a browser key. The restrictions above keep it safe.
+Visitors of the live site can still see a browser key; the restrictions above are what limit its use.
 
 **Cost:** each scan makes 1 Nearby Search request (5 with *Deep scan*). The app asks for rating and opening hours, so Google bills these requests at the Places "Enterprise" SKU, which currently includes 1,000 free requests per month (terms can differ for EEA billing addresses). Results are reused for 10 minutes for the same spot and radius, so changing the rating, review or open filters doesn't make a new request. The app also stops itself after 30 Google requests per day per browser (`DAILY_REQUEST_LIMIT` in `src/app.js`); that only limits your own use, so the Google-side quota is still the real safety net. See Google's pricing page for current prices.
 
