@@ -7,7 +7,7 @@
 //
 // The key is still visible on the live site, so in Google Cloud Console restrict it to:
 //   - Application restriction: Websites -> https://<your-user>.github.io/*
-//   - API restriction: "Maps JavaScript API" and "Places API (New)"
+//   - API restriction: "Places API (New)"
 window.CHOICES_CONFIG = {
   googleMapsApiKey: '',
 };

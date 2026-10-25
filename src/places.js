@@ -1,98 +1,88 @@
-// Data providers. Both return a list of normalized places:
-// { id, name, cuisine, rating, reviews, priceLevel (0-4|null), lat, lng, address, mapsUrl, openNow (bool|undefined), distance }
-import { CUISINE_TYPES, cuisineOf, distanceMeters, isFoodPlace, isOpenAt } from './cuisine.js';
+// Data providers. Both return one page of results:
+// { places: [{ id, name, cuisine, rating, reviews, priceLevel (0-4|null), lat, lng, address, mapsUrl, openNow (bool|undefined), distance }],
+//   nextPageToken: string|null }
+import { cuisineOf, distanceMeters, isFoodPlace, isOpenAt } from './cuisine.js';
 
-// ---------- Google Places (New) via the Maps JavaScript API ----------
+// ---------- Google Places API (New): Text Search over REST ----------
+//
+// Text Search (unlike Nearby Search) filters by "open now" and minimum rating on
+// Google's side and pages through up to 60 results, 20 per request.
 
-const FIELDS = [
+const SEARCH_URL = 'https://places.googleapis.com/v1/places:searchText';
+
+const FIELD_MASK = [
   'id', 'displayName', 'primaryType', 'primaryTypeDisplayName', 'types', 'rating', 'userRatingCount',
-  'priceLevel', 'location', 'formattedAddress', 'googleMapsURI', 'regularOpeningHours',
-  'utcOffsetMinutes', 'businessStatus',
-];
+  'priceLevel', 'location', 'formattedAddress', 'googleMapsUri', 'currentOpeningHours.openNow',
+  'regularOpeningHours.periods', 'utcOffsetMinutes', 'businessStatus',
+].map((f) => `places.${f}`).concat('nextPageToken').join(',');
 
-const PRICE_LEVELS = { FREE: 0, INEXPENSIVE: 1, MODERATE: 2, EXPENSIVE: 3, VERY_EXPENSIVE: 4 };
+const PRICE_LEVELS = {
+  PRICE_LEVEL_FREE: 0, PRICE_LEVEL_INEXPENSIVE: 1, PRICE_LEVEL_MODERATE: 2,
+  PRICE_LEVEL_EXPENSIVE: 3, PRICE_LEVEL_VERY_EXPENSIVE: 4,
+};
 
-let mapsPromise = null;
-
-function loadGoogleMaps(apiKey) {
-  if (window.google?.maps?.importLibrary) return Promise.resolve();
-  mapsPromise ??= new Promise((resolve, reject) => {
-    const callback = '__choicesMapsReady';
-    window[callback] = () => resolve();
-    // Google calls this global when the key is invalid or not allowed for this site.
-    window.gm_authFailure = () => reject(new Error('Google rejected the API key. Check that the Places API (New) is enabled and this site is an allowed referrer.'));
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&loading=async&callback=${callback}`;
-    script.async = true;
-    script.onerror = () => {
-      mapsPromise = null;
-      reject(new Error('Could not load Google Maps. Check your network connection.'));
-    };
-    document.head.append(script);
-  });
-  return mapsPromise;
+/** Text Search only takes a rectangle, so search the box around the circle and trim to the radius afterwards. */
+function boundsAround({ lat, lng }, radius) {
+  const dLat = radius / 111320;
+  const dLng = radius / (111320 * Math.cos((lat * Math.PI) / 180));
+  return { low: { latitude: lat - dLat, longitude: lng - dLng }, high: { latitude: lat + dLat, longitude: lng + dLng } };
 }
 
-function chunk(list, size) {
-  const out = [];
-  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
-  return out;
+function googleError(status, error) {
+  if (status === 403) return 'Google rejected the API key. Check that the Places API (New) is enabled and this site is an allowed website for the key.';
+  if (status === 429) return 'Google\'s request limit for this key was reached. Try again later.';
+  return `Google Places error: ${error?.message ?? `HTTP ${status}`}`;
 }
 
-/**
- * Nearby Search returns at most 20 places per request. A "deep" scan runs extra
- * requests per group of cuisine types to surface more variety (costs more API calls).
- */
-function typeGroupsFor(deep) {
-  return [['restaurant'], ...(deep ? chunk(Object.keys(CUISINE_TYPES), 8) : [])];
-}
-
-/** Number of billable Nearby Search requests one scan makes. */
-export function googleRequestCount(deep) {
-  return typeGroupsFor(deep).length;
-}
-
-export async function searchGoogle({ apiKey, center, radius, deep = false }) {
-  await loadGoogleMaps(apiKey);
-  const { Place, SearchNearbyRankPreference } = await google.maps.importLibrary('places');
-
-  const responses = await Promise.all(typeGroupsFor(deep).map((includedTypes) =>
-    Place.searchNearby({
-      fields: FIELDS,
-      locationRestriction: { center, radius },
-      includedTypes,
-      maxResultCount: 20,
-      rankPreference: SearchNearbyRankPreference.POPULARITY,
-    })));
-
-  const unique = new Map();
-  for (const { places } of responses) {
-    for (const place of places) {
-      if (place.businessStatus && place.businessStatus !== 'OPERATIONAL') continue;
-      if (!isFoodPlace(place)) continue;
-      unique.set(place.id, place);
-    }
+/** One billable request. Pass the previous result's nextPageToken (with the same other params) for the next page. */
+export async function searchGoogle({ apiKey, center, radius, minRating = 0, openOnly = true, pageToken }) {
+  const body = {
+    textQuery: 'restaurant',
+    includedType: 'restaurant',
+    strictTypeFiltering: true,
+    pageSize: 20,
+    locationRestriction: { rectangle: boundsAround(center, radius) },
+    // Google rounds minRating *up* to the next 0.5, so round down here and filter exactly afterwards.
+    minRating: Math.floor(minRating * 2) / 2,
+    ...(openOnly && { openNow: true }),
+    ...(pageToken && { pageToken }),
+  };
+  let res;
+  try {
+    res = await fetch(SEARCH_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': apiKey, 'X-Goog-FieldMask': FIELD_MASK },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Error('Could not reach Google. Check your network connection.');
   }
-  return [...unique.values()].map((place) => normalizeGooglePlace(place, center));
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(googleError(res.status, data.error));
+
+  const places = (data.places ?? [])
+    .filter((p) => (!p.businessStatus || p.businessStatus === 'OPERATIONAL') && isFoodPlace(p))
+    .map((p) => normalizeGooglePlace(p, center))
+    .filter((p) => p.distance <= radius); // drop the corners of the search box
+  return { places, nextPageToken: data.nextPageToken ?? null };
 }
 
 function normalizeGooglePlace(place, center) {
-  // Place.isOpen() only exists on the Maps JS beta channel, so work it out from the weekly hours.
-  const openNow = isOpenAt(place.regularOpeningHours?.periods, place.utcOffsetMinutes);
-  const lat = place.location.lat();
-  const lng = place.location.lng();
+  const lat = place.location.latitude;
+  const lng = place.location.longitude;
   return {
     id: place.id,
-    name: place.displayName,
-    cuisine: cuisineOf(place),
+    name: place.displayName?.text ?? 'Unnamed place',
+    cuisine: cuisineOf({ ...place, primaryTypeDisplayName: place.primaryTypeDisplayName?.text }),
     rating: place.rating ?? null,
     reviews: place.userRatingCount ?? 0,
     priceLevel: PRICE_LEVELS[place.priceLevel] ?? null,
     lat,
     lng,
     address: place.formattedAddress ?? '',
-    mapsUrl: place.googleMapsURI ?? `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`,
-    openNow,
+    mapsUrl: place.googleMapsUri ?? `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`,
+    // Google's own answer includes holiday hours; the weekly periods are a fallback.
+    openNow: place.currentOpeningHours?.openNow ?? isOpenAt(place.regularOpeningHours?.periods, place.utcOffsetMinutes),
     distance: distanceMeters(center, { lat, lng }),
   };
 }
@@ -130,7 +120,7 @@ function mulberry32(seed) {
   };
 }
 
-export async function searchDemo({ center, radius }) {
+export async function searchDemo({ center, radius, pageToken }) {
   const rand = mulberry32(Math.round(center.lat * 1000) * 31 + Math.round(center.lng * 1000));
   const places = [];
   for (const [type, names] of Object.entries(DEMO_NAMES)) {
@@ -158,5 +148,7 @@ export async function searchDemo({ center, radius }) {
     });
   }
   await new Promise((r) => setTimeout(r, 300)); // feel like a network call
-  return places;
+  const start = Number(pageToken ?? 0);
+  const end = start + 20;
+  return { places: places.slice(start, end), nextPageToken: end < places.length ? String(end) : null };
 }

@@ -1,5 +1,5 @@
 import { filterPlaces, groupByCuisine, weightedPick } from './cuisine.js';
-import { googleRequestCount, searchDemo, searchGoogle } from './places.js';
+import { searchDemo, searchGoogle } from './places.js';
 
 const $ = (sel) => document.querySelector(sel);
 const KEY_STORAGE = 'choices.apiKey';
@@ -7,37 +7,66 @@ const CRITERIA_STORAGE = 'choices.criteria';
 const DEMO_CENTER = { lat: 52.52, lng: 13.405 }; // Berlin, used when location is unavailable in demo mode
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
-// Google gives 1,000 free Nearby Search (Enterprise) requests a month; 30 a day stays under that.
+// Google gives 1,000 free Text Search (Enterprise) requests a month; 30 a day stays under that.
 // This is per browser: it protects against our own overuse, not against someone copying the key.
 const DAILY_REQUEST_LIMIT = 30;
 const USAGE_STORAGE = 'choices.usage';
 
-const state = { groups: [], duel: null, lastPickCuisine: null };
+const state = { search: null, criteria: null, groups: [], duel: null, lastPickCuisine: null };
 
-// Recent search results, kept in memory only, so re-scanning from roughly the same
-// spot (or just changing rating/review/open filters) doesn't cost another API request.
-const searchCache = new Map();
+// Recent searches, kept in memory only, so scanning again from roughly the same spot,
+// or changing only the review filter, doesn't cost another API request.
+const searches = new Map();
 
-async function cachedSearch(params, demo) {
-  const { center, radius, deep } = params;
-  // 3 decimals is ~100 m, so small GPS jitter still hits the cache.
-  const key = [demo ? 'demo' : 'google', center.lat.toFixed(3), center.lng.toFixed(3), radius, deep].join('|');
-  const hit = searchCache.get(key);
-  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.places;
-  let places;
-  if (demo) {
-    places = await searchDemo(params);
-  } else {
-    const needed = googleRequestCount(deep);
-    if (requestsUsedToday() + needed > DAILY_REQUEST_LIMIT) {
-      throw new Error(`Daily limit reached (${DAILY_REQUEST_LIMIT} Google requests) to stay within the free allowance. Try again tomorrow${deep ? ', or turn off Deep scan' : ''}.`);
-    }
-    // Counted before the call: a request that fails halfway may still be billed.
-    recordRequests(needed);
-    places = await searchGoogle({ ...params, apiKey: apiKey() });
+function searchKey({ center, radius, minRating, openOnly }, demo) {
+  // 3 decimals is ~100 m, so small GPS jitter still hits the cache. Google filters
+  // rating in 0.5 steps, so 4.2 and 4.4 share a search; the exact cut is applied locally.
+  return [demo ? 'demo' : 'google', center.lat.toFixed(3), center.lng.toFixed(3), radius,
+    Math.floor(minRating * 2) / 2, openOnly].join('|');
+}
+
+function spendRequest() {
+  if (requestsUsedToday() >= DAILY_REQUEST_LIMIT) {
+    throw new Error(`Daily limit reached (${DAILY_REQUEST_LIMIT} Google requests) to stay within the free allowance. Try again tomorrow.`);
   }
-  searchCache.set(key, { at: Date.now(), places });
-  return places;
+  // Counted before the call: a request that fails halfway may still be billed.
+  recordRequests(1);
+}
+
+function fetchPage(params, demo, pageToken) {
+  if (demo) return searchDemo({ ...params, pageToken });
+  spendRequest();
+  return searchGoogle({ ...params, apiKey: apiKey(), pageToken });
+}
+
+async function startSearch(params, demo) {
+  const key = searchKey(params, demo);
+  const hit = searches.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit;
+  const page = await fetchPage(params, demo);
+  const search = { at: Date.now(), params, demo, places: page.places, nextPageToken: page.nextPageToken };
+  searches.set(key, search);
+  return search;
+}
+
+/** Fetches the next page of the current search (one more request) and adds it to the results. */
+async function loadMore() {
+  const { search } = state;
+  const button = $('#load-more');
+  button.disabled = true;
+  $('#more-status').textContent = '';
+  try {
+    const page = await fetchPage(search.params, search.demo, search.nextPageToken);
+    const seen = new Set(search.places.map((p) => p.id));
+    search.places.push(...page.places.filter((p) => !seen.has(p.id)));
+    search.nextPageToken = page.nextPageToken;
+    showResults();
+  } catch (err) {
+    console.error(err);
+    $('#more-status').textContent = err.message || 'Something went wrong.';
+  } finally {
+    button.disabled = false;
+  }
 }
 
 // ---------- storage (best effort: private windows may block it) ----------
@@ -130,14 +159,23 @@ function placeCard(p) {
   ]);
 }
 
-function renderResults(total) {
+function showResults() {
+  const { search, criteria } = state;
+  const matches = filterPlaces(search.places, criteria);
+  state.groups = groupByCuisine(matches);
   const { groups } = state;
+
   $('#results-title').textContent = groups.length
-    ? `${total} places · ${groups.length} cuisine${groups.length === 1 ? '' : 's'}`
+    ? `${matches.length} places · ${groups.length} cuisine${groups.length === 1 ? '' : 's'}`
     : 'Nothing matches right now';
-  $('#results-sub').textContent = groups.length
+  let sub = groups.length
     ? 'Tap a cuisine to see the places, or let us help you decide.'
     : 'Try a bigger radius, a lower minimum rating, or fewer required reviews.';
+  if (!search.demo) {
+    const left = Math.max(0, DAILY_REQUEST_LIMIT - requestsUsedToday());
+    sub += ` ${left} of ${DAILY_REQUEST_LIMIT} Google requests left today.`;
+  }
+  $('#results-sub').textContent = sub;
   $('#start-duel').disabled = groups.length < 2;
   $('#surprise').disabled = groups.length === 0;
 
@@ -147,6 +185,8 @@ function renderResults(total) {
     el('strong', {}, g.cuisine),
     el('small', {}, cuisineSummary(g)),
   ])));
+  $('#load-more').hidden = !search.nextPageToken;
+  $('#load-more').textContent = search.demo ? 'Show more places' : 'Show more places (uses 1 request)';
   show('view-results');
 }
 
@@ -207,8 +247,9 @@ function showPick(group) {
 }
 
 function surprise() {
+  // Groups are rebuilt when more places load, so compare by name.
   const pool = state.groups.length > 1 && state.lastPickCuisine
-    ? state.groups.filter((g) => g !== state.lastPickCuisine)
+    ? state.groups.filter((g) => g.cuisine !== state.lastPickCuisine.cuisine)
     : state.groups;
   showPick(weightedPick(pool, (g) => g.count * g.avgScore));
 }
@@ -222,7 +263,6 @@ function readCriteria() {
     minRating: Number(f.minRating.value),
     minReviews: Number(f.minReviews.value) || 0,
     openOnly: f.openOnly.checked,
-    deep: f.deep.checked,
   };
 }
 
@@ -260,17 +300,13 @@ async function scan(event) {
     }
 
     setStatus('Looking for restaurants…');
-    const places = await cachedSearch({ center, radius: criteria.radius, deep: criteria.deep }, demo);
-
-    const matches = filterPlaces(places, criteria);
-    state.groups = groupByCuisine(matches);
+    const { radius, minRating, openOnly } = criteria;
+    state.search = await startSearch({ center, radius, minRating, openOnly }, demo);
+    state.criteria = criteria;
     state.lastPickCuisine = null;
+    $('#more-status').textContent = '';
     setStatus('');
-    renderResults(matches.length);
-    if (!demo) {
-      const left = Math.max(0, DAILY_REQUEST_LIMIT - requestsUsedToday());
-      $('#results-sub').textContent += ` ${left} of ${DAILY_REQUEST_LIMIT} Google requests left today.`;
-    }
+    showResults();
   } catch (err) {
     console.error(err);
     setStatus(err.message || 'Something went wrong.', true);
@@ -307,6 +343,7 @@ function init() {
   $('#duel-cancel').addEventListener('click', () => show('view-results'));
   $('#pick-back').addEventListener('click', () => show('view-results'));
   $('#start-duel').addEventListener('click', startDuel);
+  $('#load-more').addEventListener('click', loadMore);
   $('#surprise').addEventListener('click', surprise);
   $('#pick-again').addEventListener('click', surprise);
   $('#pick-more').addEventListener('click', () => showDetail(state.lastPickCuisine));
