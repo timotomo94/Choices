@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Choices</title>
+  <meta name="description" content="Find well-rated restaurants open near you, grouped by cuisine, and get help picking one.">
+  <meta name="theme-color" content="#e8590c">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍽️</text></svg>">
+  <link rel="stylesheet" href="styles.css">
+  <script src="config.js"></script>
+  <script type="module" src="src/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <button class="brand" id="home" type="button">🍽️ Choices</button>
+    <span class="badge" id="mode-badge" hidden>Demo data</span>
+  </header>
+
+  <main>
+    <!-- 1. Start: criteria + scan -->
+    <section id="view-start" class="view">
+      <h1>Hungry? Let's narrow it down.</h1>
+      <p class="lead">We find well-rated places that are open right now, group them by cuisine, and help you pick one.</p>
+
+      <form id="criteria" class="card">
+        <label class="field">
+          <span>Search radius <output id="radius-out">1.5 km</output></span>
+          <input type="range" name="radius" min="500" max="5000" step="250" value="1500">
+        </label>
+        <label class="field">
+          <span>Minimum rating <output id="rating-out">4.2 ★</output></span>
+          <input type="range" name="minRating" min="3" max="4.8" step="0.1" value="4.2">
+        </label>
+        <label class="field">
+          <span>Minimum number of reviews</span>
+          <input type="number" name="minReviews" min="0" step="10" value="30" inputmode="numeric">
+        </label>
+        <label class="check"><input type="checkbox" name="openOnly" checked> Open now only</label>
+        <label class="check"><input type="checkbox" name="deep"> Deep scan <small>(more variety, more API calls)</small></label>
+
+        <details class="advanced">
+          <summary>Google Maps API key</summary>
+          <p class="hint">Without a key the app shows demo data. A key entered here is stored only in this browser.</p>
+          <input type="password" name="apiKey" placeholder="AIza…" autocomplete="off" spellcheck="false">
+        </details>
+
+        <button class="primary" type="submit" id="scan">📍 Find food near me</button>
+        <p class="status" id="status" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <!-- 2. Results: cuisines -->
+    <section id="view-results" class="view" hidden>
+      <h2 id="results-title"></h2>
+      <p class="lead" id="results-sub"></p>
+      <div class="actions">
+        <button class="primary" type="button" id="start-duel">🤔 Help me decide</button>
+        <button class="secondary" type="button" id="surprise">🎲 Surprise me</button>
+      </div>
+      <div class="grid" id="cuisine-grid"></div>
+      <button class="link" type="button" id="back-start">← Change criteria</button>
+    </section>
+
+    <!-- 3. One cuisine: its restaurants -->
+    <section id="view-detail" class="view" hidden>
+      <button class="link" type="button" id="back-results">← All cuisines</button>
+      <h2 id="detail-title"></h2>
+      <ol class="places" id="place-list"></ol>
+    </section>
+
+    <!-- 4. This-or-that duel between cuisines -->
+    <section id="view-duel" class="view" hidden>
+      <h2>Which sounds better right now?</h2>
+      <p class="lead" id="duel-progress"></p>
+      <div class="duel">
+        <button type="button" class="duel-option" id="duel-a"></button>
+        <span class="vs">or</span>
+        <button type="button" class="duel-option" id="duel-b"></button>
+      </div>
+      <button class="link" type="button" id="duel-cancel">← Back to all cuisines</button>
+    </section>
+
+    <!-- 5. The pick -->
+    <section id="view-pick" class="view" hidden>
+      <p class="eyebrow">Tonight you're having</p>
+      <h2 id="pick-cuisine"></h2>
+      <div id="pick-place"></div>
+      <div class="actions">
+        <button class="secondary" type="button" id="pick-again">🎲 Spin again</button>
+        <button class="secondary" type="button" id="pick-more">See all options</button>
+      </div>
+      <button class="link" type="button" id="pick-back">← All cuisines</button>
+    </section>
+  </main>
+
+  <footer class="footer">Place data © Google. Ratings and opening hours can be out of date.</footer>
+</body>
+</html>
