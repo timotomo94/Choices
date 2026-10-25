@@ -26,12 +26,12 @@ Geolocation only works on `https://` or `http://localhost`.
 3. Create an API key and restrict it:
    - Application restriction: **Websites** → `https://<your-user>.github.io/*` (plus `http://localhost:8000/*` for development).
    - API restriction: only the two APIs above.
-   - Set a daily request quota so a leaked key can't run up a bill.
+   - Cap usage so you stay in the free allowance: **APIs & Services → Places API (New) → Quotas** → set *SearchNearbyRequest per day* to about **30**. Requests above the cap fail instead of being billed.
 4. Put the key in `config.js`, or paste it in the app under *Google Maps API key* (stored only in that browser).
 
 Visitors can always see a browser key. The restrictions above keep it safe.
 
-**Cost:** each scan makes 1 Nearby Search request (5 with *Deep scan*). The app asks for rating and opening hours, so Google bills these requests at the Places "Enterprise" SKU. See Google's pricing page for current prices and the monthly free usage.
+**Cost:** each scan makes 1 Nearby Search request (5 with *Deep scan*). The app asks for rating and opening hours, so Google bills these requests at the Places "Enterprise" SKU, which currently includes 1,000 free requests per month (terms can differ for EEA billing addresses). Results are reused for 10 minutes for the same spot and radius, so changing the rating, review or open filters doesn't make a new request. See Google's pricing page for current prices.
 
 ## Deploy to GitHub Pages
 

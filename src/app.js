@@ -6,7 +6,24 @@ const KEY_STORAGE = 'choices.apiKey';
 const CRITERIA_STORAGE = 'choices.criteria';
 const DEMO_CENTER = { lat: 52.52, lng: 13.405 }; // Berlin, used when location is unavailable in demo mode
 
+const CACHE_TTL_MS = 10 * 60 * 1000;
+
 const state = { groups: [], duel: null, lastPickCuisine: null };
+
+// Recent search results, kept in memory only, so re-scanning from roughly the same
+// spot (or just changing rating/review/open filters) doesn't cost another API request.
+const searchCache = new Map();
+
+async function cachedSearch(params, demo) {
+  const { center, radius, deep } = params;
+  // 3 decimals is ~100 m, so small GPS jitter still hits the cache.
+  const key = [demo ? 'demo' : 'google', center.lat.toFixed(3), center.lng.toFixed(3), radius, deep].join('|');
+  const hit = searchCache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.places;
+  const places = demo ? await searchDemo(params) : await searchGoogle({ ...params, apiKey: apiKey() });
+  searchCache.set(key, { at: Date.now(), places });
+  return places;
+}
 
 // ---------- storage (best effort: private windows may block it) ----------
 
@@ -204,9 +221,7 @@ async function scan(event) {
     }
 
     setStatus('Looking for restaurants…');
-    const places = demo
-      ? await searchDemo({ center, radius: criteria.radius })
-      : await searchGoogle({ apiKey: apiKey(), center, radius: criteria.radius, deep: criteria.deep });
+    const places = await cachedSearch({ center, radius: criteria.radius, deep: criteria.deep }, demo);
 
     const matches = filterPlaces(places, criteria);
     state.groups = groupByCuisine(matches);
