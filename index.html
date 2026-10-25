@@ -37,7 +37,6 @@
           <input type="number" name="minReviews" min="0" step="10" value="30" inputmode="numeric">
         </label>
         <label class="check"><input type="checkbox" name="openOnly" checked> Open now only</label>
-        <label class="check"><input type="checkbox" name="deep"> Deep scan <small>(more variety, more API calls)</small></label>
 
         <details class="advanced">
           <summary>Google Maps API key</summary>
@@ -59,6 +58,8 @@
         <button class="secondary" type="button" id="surprise">🎲 Surprise me</button>
       </div>
       <div class="grid" id="cuisine-grid"></div>
+      <button class="secondary more" type="button" id="load-more" hidden>Show more places</button>
+      <p class="status error" id="more-status" role="status" aria-live="polite"></p>
       <button class="link" type="button" id="back-start">← Change criteria</button>
     </section>
 

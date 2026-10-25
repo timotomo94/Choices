@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cuisineOf, distanceMeters, filterPlaces, groupByCuisine, score, weightedPick } from '../src/cuisine.js';
+import { cuisineOf, distanceMeters, filterPlaces, groupByCuisine, isFoodPlace, isOpenAt, score, weightedPick } from '../src/cuisine.js';
 
 test('cuisineOf maps known Google types', () => {
   assert.equal(cuisineOf({ primaryType: 'sushi_restaurant', types: ['restaurant'] }), 'Sushi');
@@ -50,4 +50,49 @@ test('weightedPick respects weights', () => {
 test('distanceMeters is roughly right', () => {
   const d = distanceMeters({ lat: 52.52, lng: 13.405 }, { lat: 52.53, lng: 13.405 });
   assert.ok(Math.abs(d - 1112) < 5, `got ${d}`);
+});
+
+test('cuisineOf prefers the primary type over secondary types', () => {
+  // Borchardt in Berlin: primary german_restaurant, also tagged french_restaurant.
+  assert.equal(cuisineOf({ primaryType: 'german_restaurant', types: ['german_restaurant', 'french_restaurant', 'restaurant'] }), 'German');
+  assert.equal(cuisineOf({ primaryType: 'restaurant', types: ['restaurant', 'brunch_restaurant', 'japanese_restaurant'] }), 'Breakfast & Brunch');
+});
+
+test('isFoodPlace leaves out hotels and landmarks that only contain a restaurant', () => {
+  assert.equal(isFoodPlace({ primaryType: 'hotel' }), false);
+  assert.equal(isFoodPlace({ primaryType: 'historical_landmark' }), false);
+  assert.equal(isFoodPlace({ primaryType: 'chicken_restaurant' }), true);
+  assert.equal(isFoodPlace({ primaryType: 'restaurant' }), true);
+  assert.equal(isFoodPlace({ primaryType: 'steak_house' }), true);
+});
+
+test('isOpenAt reads weekly periods in the place time zone', () => {
+  // Every day 11:30-22:00 local time, place at UTC+1.
+  const daily = [0, 1, 2, 3, 4, 5, 6].map((day) => ({ open: { day, hour: 11, minute: 30 }, close: { day, hour: 22, minute: 0 } }));
+  const at = (iso) => new Date(iso);
+  assert.equal(isOpenAt(daily, 60, at('2026-10-25T12:00:00Z')), true); // 13:00 local
+  assert.equal(isOpenAt(daily, 60, at('2026-10-25T03:00:00Z')), false); // 04:00 local
+  assert.equal(isOpenAt(daily, 60, at('2026-10-25T21:00:00Z')), false); // 22:00 local, just closed
+  assert.equal(isOpenAt(daily, 60, at('2026-10-25T10:29:00Z')), false); // 11:29 local, not yet open
+  assert.equal(isOpenAt(daily, 60, at('2026-10-25T10:30:00Z')), true); // 11:30 local, just opened
+});
+
+test('isOpenAt handles late nights, 24/7 and missing data', () => {
+  // Saturday 18:00 to Sunday 02:00 (wraps around the end of the week).
+  const lateSaturday = [{ open: { day: 6, hour: 18, minute: 0 }, close: { day: 0, hour: 2, minute: 0 } }];
+  assert.equal(isOpenAt(lateSaturday, 0, new Date('2026-10-25T01:00:00Z')), true); // Sunday 01:00
+  assert.equal(isOpenAt(lateSaturday, 0, new Date('2026-10-24T23:00:00Z')), true); // Saturday 23:00
+  assert.equal(isOpenAt(lateSaturday, 0, new Date('2026-10-25T03:00:00Z')), false); // Sunday 03:00
+  assert.equal(isOpenAt([{ open: { day: 0, hour: 0, minute: 0 } }], 60), true); // open 24 hours
+  assert.equal(isOpenAt([], 60), undefined);
+  assert.equal(isOpenAt(undefined, 60), undefined);
+});
+
+test('groupByCuisine puts Other last', () => {
+  const groups = groupByCuisine([
+    { cuisine: 'Other', rating: 4.5, reviews: 100, distance: 100 },
+    { cuisine: 'Other', rating: 4.5, reviews: 100, distance: 100 },
+    { cuisine: 'Thai', rating: 4.5, reviews: 100, distance: 100 },
+  ]);
+  assert.deepEqual(groups.map((g) => g.cuisine), ['Thai', 'Other']);
 });
