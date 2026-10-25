@@ -42,8 +42,19 @@ export const CUISINE_EMOJI = {
   Italian: '🍝', Japanese: '🍱', Korean: '🍲', Lebanese: '🧆', Mediterranean: '🫒', Mexican: '🌮',
   'Middle Eastern': '🧆', Pizza: '🍕', Ramen: '🍜', Seafood: '🦞', Spanish: '🥘', Steakhouse: '🥩',
   Sushi: '🍣', Thai: '🌶️', Turkish: '🥙', Vegan: '🥗', Vegetarian: '🥦', Vietnamese: '🍜',
-  Sandwiches: '🥪', Other: '🍽️',
+  Sandwiches: '🥪', German: '🥨', Bavarian: '🥨', Chicken: '🍗', Asian: '🥢', Other: '🍽️',
 };
+
+// Primary types that mean "this is mainly a place to eat". Anything else (hotels,
+// landmarks, museums with a restaurant inside) is left out.
+const FOOD_PRIMARY_TYPES = new Set([
+  'restaurant', 'steak_house', 'sandwich_shop', 'diner', 'food_court', 'cafe', 'bakery', 'deli',
+  'bistro', 'brasserie', 'gastropub', 'pub', 'bar_and_grill', 'noodle_shop', 'meal_takeaway',
+]);
+
+export function isFoodPlace({ primaryType } = {}) {
+  return !primaryType || primaryType.endsWith('_restaurant') || FOOD_PRIMARY_TYPES.has(primaryType);
+}
 
 // Types that say "this is food" but nothing about the cuisine.
 const GENERIC_TYPES = new Set([
@@ -57,17 +68,45 @@ function titleCase(slug) {
 }
 
 /** Best-effort cuisine label for a place, from its primary type and type list. */
+function cuisineFromType(t) {
+  if (CUISINE_TYPES[t]) return CUISINE_TYPES[t];
+  // Newer Google types (e.g. "georgian_restaurant") we don't have in the table.
+  if (t.endsWith('_restaurant') && !GENERIC_TYPES.has(t)) return titleCase(t.replace(/_restaurant$/, ''));
+  return null;
+}
+
 export function cuisineOf({ primaryType, types = [], primaryTypeDisplayName } = {}) {
-  const candidates = [primaryType, ...types].filter(Boolean);
-  for (const t of candidates) {
-    if (CUISINE_TYPES[t]) return CUISINE_TYPES[t];
-  }
-  // Newer Google types (e.g. "georgian_restaurant") we don't know yet.
-  for (const t of candidates) {
-    if (t.endsWith('_restaurant') && !GENERIC_TYPES.has(t)) return titleCase(t.replace(/_restaurant$/, ''));
+  // The primary type wins: a German restaurant that also serves French dishes is German.
+  const fromPrimary = primaryType && cuisineFromType(primaryType);
+  if (fromPrimary) return fromPrimary;
+  const known = types.find((t) => CUISINE_TYPES[t]);
+  if (known) return CUISINE_TYPES[known];
+  for (const t of types) {
+    const c = cuisineFromType(t);
+    if (c) return c;
   }
   if (primaryTypeDisplayName && !/^(restaurant|food)$/i.test(primaryTypeDisplayName)) return primaryTypeDisplayName;
   return 'Other';
+}
+
+/**
+ * Whether a place is open at `now`, from Google's weekly opening periods
+ * (`regularOpeningHours.periods`) and the place's UTC offset. Undefined when unknown.
+ * Holiday hours are not included in these periods.
+ */
+export function isOpenAt(periods, utcOffsetMinutes, now = new Date()) {
+  if (!periods?.length || utcOffsetMinutes == null) return undefined;
+  const WEEK = 7 * 1440;
+  const local = new Date(now.getTime() + utcOffsetMinutes * 60000);
+  const t = local.getUTCDay() * 1440 + local.getUTCHours() * 60 + local.getUTCMinutes();
+  const at = (p) => p.day * 1440 + (p.hour ?? 0) * 60 + (p.minute ?? 0);
+  return periods.some(({ open, close }) => {
+    if (!close) return true; // Google's way of saying "open 24 hours"
+    const o = at(open);
+    let c = at(close);
+    if (c <= o) c += WEEK; // wraps past Saturday night
+    return (t >= o && t < c) || (t + WEEK >= o && t + WEEK < c);
+  });
 }
 
 /** Great-circle distance in metres. */
@@ -109,7 +148,7 @@ export function groupByCuisine(places) {
     const avgScore = list.reduce((s, p) => s + score(p), 0) / list.length;
     const nearest = Math.min(...list.map((p) => p.distance ?? Infinity));
     return { cuisine, emoji: CUISINE_EMOJI[cuisine] ?? '🍽️', places: list, count: list.length, avgRating, avgScore, nearest };
-  }).sort((a, b) => b.count - a.count || b.avgScore - a.avgScore);
+  }).sort((a, b) => (a.cuisine === 'Other') - (b.cuisine === 'Other') || b.count - a.count || b.avgScore - a.avgScore);
 }
 
 /** Picks an item at random, weighted by weightFn. `rand` is injectable for tests. */

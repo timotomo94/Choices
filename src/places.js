@@ -1,6 +1,6 @@
 // Data providers. Both return a list of normalized places:
 // { id, name, cuisine, rating, reviews, priceLevel (0-4|null), lat, lng, address, mapsUrl, openNow (bool|undefined), distance }
-import { CUISINE_TYPES, cuisineOf, distanceMeters } from './cuisine.js';
+import { CUISINE_TYPES, cuisineOf, distanceMeters, isFoodPlace, isOpenAt } from './cuisine.js';
 
 // ---------- Google Places (New) via the Maps JavaScript API ----------
 
@@ -69,19 +69,16 @@ export async function searchGoogle({ apiKey, center, radius, deep = false }) {
   for (const { places } of responses) {
     for (const place of places) {
       if (place.businessStatus && place.businessStatus !== 'OPERATIONAL') continue;
+      if (!isFoodPlace(place)) continue;
       unique.set(place.id, place);
     }
   }
-  return Promise.all([...unique.values()].map((place) => normalizeGooglePlace(place, center)));
+  return [...unique.values()].map((place) => normalizeGooglePlace(place, center));
 }
 
-async function normalizeGooglePlace(place, center) {
-  let openNow;
-  try {
-    openNow = await place.isOpen(); // undefined when Google has no hours for the place
-  } catch {
-    openNow = undefined;
-  }
+function normalizeGooglePlace(place, center) {
+  // Place.isOpen() only exists on the Maps JS beta channel, so work it out from the weekly hours.
+  const openNow = isOpenAt(place.regularOpeningHours?.periods, place.utcOffsetMinutes);
   const lat = place.location.lat();
   const lng = place.location.lng();
   return {

@@ -44,7 +44,7 @@ Turn it on once under **Settings → Pages → Build and deployment → Source: 
 |---|---|---|
 | Page and views | `index.html`, `styles.css` | Mobile-first single page: criteria, cuisine grid, cuisine detail, duel, pick. Light and dark theme. |
 | Config | `config.js` | Public runtime config (the restricted API key). |
-| Places provider | `src/places.js` | Loads the Maps JS API and runs `Place.searchNearby` (max 20 results per request; Deep scan adds one request per group of cuisine types and removes duplicates). Checks `isOpen()` and normalizes results. Also contains the demo-data provider. |
+| Places provider | `src/places.js` | Loads the Maps JS API and runs `Place.searchNearby` (max 20 results per request; Deep scan adds one request per group of cuisine types and removes duplicates). Works out "open now" from the weekly opening hours and normalizes results. Also contains the demo-data provider. |
 | Cuisine logic | `src/cuisine.js` | Maps Google place types to cuisines, filters by your criteria, ranks places by review-weighted rating, groups and sorts cuisines, makes weighted random picks. Pure functions, unit-tested. |
 | App controller | `src/app.js` | Geolocation, scan flow, rendering, the "this or that" duel and Surprise me. Saves your criteria in localStorage. |
 | Tests | `tests/` | `node:test` unit tests for the cuisine logic. |
