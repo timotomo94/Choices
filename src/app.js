@@ -1,5 +1,5 @@
 import { filterPlaces, groupByCuisine, weightedPick } from './cuisine.js';
-import { searchDemo, searchGoogle } from './places.js';
+import { googleRequestCount, searchDemo, searchGoogle } from './places.js';
 
 const $ = (sel) => document.querySelector(sel);
 const KEY_STORAGE = 'choices.apiKey';
@@ -7,6 +7,10 @@ const CRITERIA_STORAGE = 'choices.criteria';
 const DEMO_CENTER = { lat: 52.52, lng: 13.405 }; // Berlin, used when location is unavailable in demo mode
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
+// Google gives 1,000 free Nearby Search (Enterprise) requests a month; 30 a day stays under that.
+// This is per browser: it protects against our own overuse, not against someone copying the key.
+const DAILY_REQUEST_LIMIT = 30;
+const USAGE_STORAGE = 'choices.usage';
 
 const state = { groups: [], duel: null, lastPickCuisine: null };
 
@@ -20,7 +24,18 @@ async function cachedSearch(params, demo) {
   const key = [demo ? 'demo' : 'google', center.lat.toFixed(3), center.lng.toFixed(3), radius, deep].join('|');
   const hit = searchCache.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.places;
-  const places = demo ? await searchDemo(params) : await searchGoogle({ ...params, apiKey: apiKey() });
+  let places;
+  if (demo) {
+    places = await searchDemo(params);
+  } else {
+    const needed = googleRequestCount(deep);
+    if (requestsUsedToday() + needed > DAILY_REQUEST_LIMIT) {
+      throw new Error(`Daily limit reached (${DAILY_REQUEST_LIMIT} Google requests) to stay within the free allowance. Try again tomorrow${deep ? ', or turn off Deep scan' : ''}.`);
+    }
+    // Counted before the call: a request that fails halfway may still be billed.
+    recordRequests(needed);
+    places = await searchGoogle({ ...params, apiKey: apiKey() });
+  }
   searchCache.set(key, { at: Date.now(), places });
   return places;
 }
@@ -32,6 +47,30 @@ function load(key) {
 }
 function save(key, value) {
   try { value ? localStorage.setItem(key, value) : localStorage.removeItem(key); } catch { /* ignore */ }
+}
+
+// ---------- daily request guard ----------
+
+// Mirrors storage so the guard still works for this page when localStorage is blocked.
+let usageFallback = { day: '', count: 0 };
+
+const today = () => new Date().toLocaleDateString('sv'); // local date as YYYY-MM-DD
+
+function readUsage() {
+  let usage = usageFallback;
+  try {
+    usage = JSON.parse(load(USAGE_STORAGE)) ?? usageFallback;
+  } catch { /* ignore bad saved data */ }
+  return usage.day === today() ? usage : { day: today(), count: 0 };
+}
+
+function requestsUsedToday() {
+  return Math.max(readUsage().count, usageFallback.day === today() ? usageFallback.count : 0);
+}
+
+function recordRequests(n) {
+  usageFallback = { day: today(), count: requestsUsedToday() + n };
+  save(USAGE_STORAGE, JSON.stringify(usageFallback));
 }
 
 function apiKey() {
@@ -228,6 +267,10 @@ async function scan(event) {
     state.lastPickCuisine = null;
     setStatus('');
     renderResults(matches.length);
+    if (!demo) {
+      const left = Math.max(0, DAILY_REQUEST_LIMIT - requestsUsedToday());
+      $('#results-sub').textContent += ` ${left} of ${DAILY_REQUEST_LIMIT} Google requests left today.`;
+    }
   } catch (err) {
     console.error(err);
     setStatus(err.message || 'Something went wrong.', true);

@@ -7,5 +7,5 @@
 //   - API restriction: "Maps JavaScript API" and "Places API (New)"
 // and set a daily quota cap. Leave it empty to run in demo mode.
 window.CHOICES_CONFIG = {
-  googleMapsApiKey: '',
+  googleMapsApiKey: 'AIzaSyAWxvH2LkzQmRwjpP3IPR-sE95ofHCULfk',
 };

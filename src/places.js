@@ -43,12 +43,20 @@ function chunk(list, size) {
  * Nearby Search returns at most 20 places per request. A "deep" scan runs extra
  * requests per group of cuisine types to surface more variety (costs more API calls).
  */
+function typeGroupsFor(deep) {
+  return [['restaurant'], ...(deep ? chunk(Object.keys(CUISINE_TYPES), 8) : [])];
+}
+
+/** Number of billable Nearby Search requests one scan makes. */
+export function googleRequestCount(deep) {
+  return typeGroupsFor(deep).length;
+}
+
 export async function searchGoogle({ apiKey, center, radius, deep = false }) {
   await loadGoogleMaps(apiKey);
   const { Place, SearchNearbyRankPreference } = await google.maps.importLibrary('places');
 
-  const typeGroups = [['restaurant'], ...(deep ? chunk(Object.keys(CUISINE_TYPES), 8) : [])];
-  const responses = await Promise.all(typeGroups.map((includedTypes) =>
+  const responses = await Promise.all(typeGroupsFor(deep).map((includedTypes) =>
     Place.searchNearby({
       fields: FIELDS,
       locationRestriction: { center, radius },

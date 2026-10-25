@@ -31,7 +31,7 @@ Geolocation only works on `https://` or `http://localhost`.
 
 Visitors can always see a browser key. The restrictions above keep it safe.
 
-**Cost:** each scan makes 1 Nearby Search request (5 with *Deep scan*). The app asks for rating and opening hours, so Google bills these requests at the Places "Enterprise" SKU, which currently includes 1,000 free requests per month (terms can differ for EEA billing addresses). Results are reused for 10 minutes for the same spot and radius, so changing the rating, review or open filters doesn't make a new request. See Google's pricing page for current prices.
+**Cost:** each scan makes 1 Nearby Search request (5 with *Deep scan*). The app asks for rating and opening hours, so Google bills these requests at the Places "Enterprise" SKU, which currently includes 1,000 free requests per month (terms can differ for EEA billing addresses). Results are reused for 10 minutes for the same spot and radius, so changing the rating, review or open filters doesn't make a new request. The app also stops itself after 30 Google requests per day per browser (`DAILY_REQUEST_LIMIT` in `src/app.js`); that only limits your own use, so the Google-side quota is still the real safety net. See Google's pricing page for current prices.
 
 ## Deploy to GitHub Pages
 
