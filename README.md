@@ -6,9 +6,16 @@ A static web app (hosted on GitHub Pages) that helps you decide where to eat:
 2. Finds restaurants nearby with the Google Places API (New).
 3. Keeps only places that are **open now** and meet your **minimum rating and review count**.
 4. Groups them **by cuisine**.
-5. Helps you choose: browse cuisines, play **"this or that"** between cuisines, or tap **Surprise me**.
+5. Helps you choose:
+   - **Vote with friends:** pass the phone around. Each person taps every cuisine they'd be happy with (1 point each) and can tap one again to mark it as the one they really want (2 points). *Finish vote* adds up the points; a tie for first place is broken at random. Each person can also **veto** one cuisine, which rules it out whatever its points.
+   - On your own: play **"this or that"** between cuisines, or tap **Surprise me**.
 
 Without an API key it runs on demo data, so you can try it right away (`index.html?demo` forces demo mode).
+
+## Install on your phone
+
+- **Android (Chrome):** open the site and tap **Install app** in the top bar, or use the browser menu → *Add to Home screen*.
+- **iPhone (Safari):** open the site, tap the Share button, then *Add to Home Screen*.
 
 ## Run locally
 
@@ -46,8 +53,10 @@ Turn it on once under **Settings → Pages → Build and deployment → Source: 
 | Config | `config.js` | Public runtime config (the restricted API key). |
 | Places provider | `src/places.js` | Calls Places API (New) Text Search over REST. Google filters by open-now and minimum rating, and pages through up to 60 results. Leaves out non-food places (hotels, landmarks) and normalizes results. Also contains the demo-data provider. |
 | Cuisine logic | `src/cuisine.js` | Maps Google place types to cuisines, filters by your criteria, ranks places by review-weighted rating, groups and sorts cuisines, makes weighted random picks. Pure functions, unit-tested. |
-| App controller | `src/app.js` | Geolocation, scan flow, rendering, the "this or that" duel and Surprise me. Saves your criteria in localStorage. |
-| Tests | `tests/` | `node:test` unit tests for the cuisine logic. |
+| Vote logic | `src/vote.js` | Group vote: what a tap does to a ballot, vetoes, adding up ballots, random tie-break. Pure functions, unit-tested. |
+| Installable app | `manifest.webmanifest`, `sw.js`, `icons/` | Lets you add the site to a phone's home screen. The service worker is network-first, so new deploys show up on the next load, and the app still opens offline. |
+| App controller | `src/app.js` | Geolocation, scan flow, rendering, the group vote, the "this or that" duel and Surprise me. Saves your criteria in localStorage. |
+| Tests | `tests/` | `node:test` unit tests for the cuisine and vote logic. |
 | CI/CD | `.github/workflows/pages.yml` | Runs the tests, then publishes to GitHub Pages. |
 
 ### Possible next steps
@@ -56,6 +65,5 @@ Turn it on once under **Settings → Pages → Build and deployment → Source: 
 - A map view of results (would need the Maps JavaScript API again).
 - More filters: price level, walking time, "open for at least another hour", dietary options.
 - Cache results for a few minutes to save API calls.
-- Group decisions: share a link so friends can vote on cuisines.
-- Installable PWA (manifest and service worker).
+- Voting from everyone's own phone through a shared link (needs a small backend).
 - A small serverless proxy (for example a Cloudflare Worker) if you'd rather keep the key off the client.

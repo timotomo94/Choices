@@ -6,7 +6,12 @@
   <title>Choices</title>
   <meta name="description" content="Find well-rated restaurants open near you, grouped by cuisine, and get help picking one.">
   <meta name="theme-color" content="#e8590c">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍽️</text></svg>">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Choices">
   <link rel="stylesheet" href="styles.css">
   <script src="config.js"></script>
   <script type="module" src="src/app.js"></script>
@@ -15,6 +20,7 @@
   <header class="topbar">
     <button class="brand" id="home" type="button">🍽️ Choices</button>
     <span class="badge" id="mode-badge" hidden>Demo data</span>
+    <button class="secondary install" type="button" id="install" hidden>Install app</button>
   </header>
 
   <main>
@@ -53,8 +59,9 @@
     <section id="view-results" class="view" hidden>
       <h2 id="results-title"></h2>
       <p class="lead" id="results-sub"></p>
+      <button class="primary vote-start" type="button" id="start-vote">🗳️ Vote with friends</button>
       <div class="actions">
-        <button class="primary" type="button" id="start-duel">🤔 Help me decide</button>
+        <button class="secondary" type="button" id="start-duel">🤔 Help me decide</button>
         <button class="secondary" type="button" id="surprise">🎲 Surprise me</button>
       </div>
       <div class="grid" id="cuisine-grid"></div>
@@ -92,6 +99,35 @@
         <button class="secondary" type="button" id="pick-more">See all options</button>
       </div>
       <button class="link" type="button" id="pick-back">← All cuisines</button>
+    </section>
+
+    <!-- 6. Group vote: pass the phone around -->
+    <section id="view-vote" class="view" hidden>
+      <p class="eyebrow" id="vote-count"></p>
+      <h2 id="vote-title"></h2>
+      <p class="lead">Tap everything you'd be happy with. Tap again on the one you really want: it counts double. You can also veto one cuisine, which rules it out for everyone.</p>
+      <p class="vote-saved" id="vote-saved" role="status" aria-live="polite"></p>
+      <button class="secondary veto-toggle" type="button" id="vote-veto" aria-pressed="false">🚫 Veto one cuisine</button>
+      <div class="grid" id="vote-grid"></div>
+      <div class="vote-bar">
+        <button class="primary" type="button" id="vote-next">Done, pass the phone</button>
+        <button class="secondary" type="button" id="vote-finish">Finish vote</button>
+      </div>
+      <button class="link" type="button" id="vote-cancel">← Cancel vote</button>
+    </section>
+
+    <!-- 7. Group vote result -->
+    <section id="view-vote-result" class="view" hidden>
+      <p class="eyebrow" id="vote-result-eyebrow"></p>
+      <h2 id="vote-winner"></h2>
+      <p class="lead" id="vote-tie"></p>
+      <ol class="tally" id="vote-tally"></ol>
+      <h3 id="vote-places-title"></h3>
+      <ol class="places" id="vote-places"></ol>
+      <div class="actions">
+        <button class="secondary" type="button" id="vote-again">🗳️ Vote again</button>
+        <button class="secondary" type="button" id="vote-result-back">All cuisines</button>
+      </div>
     </section>
   </main>
 
