@@ -1,6 +1,6 @@
 import { filterPlaces, groupByCuisine, weightedPick } from './cuisine.js';
 import { searchDemo, searchGoogle } from './places.js';
-import { decideVote, tapBallot } from './vote.js';
+import { VETO, decideVote, tapBallot, vetoBallot } from './vote.js';
 
 const $ = (sel) => document.querySelector(sel);
 const KEY_STORAGE = 'choices.apiKey';
@@ -262,14 +262,34 @@ const plural = (n, word) => `${n} ${n === 1 ? word : word === 'person' ? 'people
 
 function startVote() {
   // Cuisine names are fixed for the whole vote, so loading more places later can't disturb it.
-  state.vote = { cuisines: state.groups.map((g) => g.cuisine), ballots: [], current: {} };
+  state.vote = { cuisines: state.groups.map((g) => g.cuisine), ballots: [], current: {}, vetoMode: false };
   $('#vote-saved').textContent = '';
   renderVote();
   show('view-vote');
 }
 
+function tapVoteCard(cuisine) {
+  const { vote } = state;
+  vote.current = vote.vetoMode ? vetoBallot(vote.current, cuisine) : tapBallot(vote.current, cuisine);
+  vote.vetoMode = false;
+  $('#vote-saved').textContent = '';
+  renderVote();
+}
+
+function badgeFor(points) {
+  if (points === VETO) return '🚫 Vetoed';
+  if (points === 2) return '⭐ Really want it (×2)';
+  return points === 1 ? '👍 Happy with it' : '';
+}
+
 function renderVote() {
-  const { ballots, current, cuisines } = state.vote;
+  const { ballots, current, cuisines, vetoMode } = state.vote;
+  const vetoedCuisine = Object.keys(current).find((c) => current[c] === VETO);
+  const vetoButton = $('#vote-veto');
+  vetoButton.setAttribute('aria-pressed', String(vetoMode));
+  vetoButton.textContent = vetoMode ? '🚫 Now tap the cuisine to rule out'
+    : vetoedCuisine ? `🚫 Vetoed: ${vetoedCuisine} (tap to change)` : '🚫 Veto one cuisine';
+  $('#vote-grid').classList.toggle('veto-mode', vetoMode);
   const picked = Object.keys(current).length > 0;
   $('#vote-count').textContent = ballots.length ? `${plural(ballots.length, 'person')} voted so far` : 'Group vote';
   $('#vote-title').textContent = `Voter ${ballots.length + 1}, what do you fancy?`;
@@ -280,13 +300,13 @@ function renderVote() {
   $('#vote-grid').replaceChildren(...groups.map((g) => {
     const points = current[g.cuisine] ?? 0;
     return el('button', {
-      type: 'button', class: 'cuisine', 'data-points': points, 'aria-pressed': String(points > 0),
-      onclick: () => { state.vote.current = tapBallot(state.vote.current, g.cuisine); $('#vote-saved').textContent = ''; renderVote(); },
+      type: 'button', class: 'cuisine', 'data-points': points, 'aria-pressed': String(points !== 0),
+      onclick: () => tapVoteCard(g.cuisine),
     }, [
       el('span', { class: 'emoji', 'aria-hidden': 'true' }, g.emoji),
       el('strong', {}, g.cuisine),
       el('small', {}, `${plural(g.count, 'place')} · ★ ${g.avgRating.toFixed(1)} avg`),
-      el('span', { class: 'vote-badge' }, points === 2 ? '⭐ Really want it (×2)' : points === 1 ? '👍 Happy with it' : ''),
+      el('span', { class: 'vote-badge' }, badgeFor(points)),
     ]);
   }));
 }
@@ -297,6 +317,7 @@ function submitBallot() {
   if (!Object.keys(vote.current).length) return;
   vote.ballots.push(vote.current);
   vote.current = {};
+  vote.vetoMode = false;
 }
 
 function nextVoter() {
@@ -309,23 +330,32 @@ function nextVoter() {
 function finishVote() {
   submitBallot();
   const { ballots } = state.vote;
-  const { ranking, winner, tied } = decideVote(ballots);
+  const { ranking, vetoed, winner, tied } = decideVote(ballots);
   const group = state.groups.find((g) => g.cuisine === winner);
-  if (!group) return;
-  state.lastPickCuisine = group;
 
-  $('#vote-result-eyebrow').textContent = `${plural(ballots.length, 'person')} voted. The winner is`;
-  $('#vote-winner').textContent = `${group.emoji} ${group.cuisine}`;
-  $('#vote-tie').textContent = tied.length
-    ? `${tied.slice(0, -1).join(', ')} and ${tied.at(-1)} tied on ${plural(ranking[0].points, 'point')}, so one was picked at random.`
-    : '';
-  $('#vote-tally').replaceChildren(...ranking.map((r) => el('li', { class: r.cuisine === winner ? 'winner' : '' }, [
-    el('strong', {}, r.cuisine),
-    el('span', { class: 'points' }, `${plural(r.points, 'point')} · ${plural(r.voters, 'person')}`),
-    el('span', { class: 'bar', 'aria-hidden': 'true' }, el('span', { style: `width: ${(r.points / ranking[0].points) * 100}%` })),
-  ])));
-  $('#vote-places-title').textContent = `${group.cuisine} places, best first`;
-  $('#vote-places').replaceChildren(...group.places.map(placeCard));
+  $('#vote-result-eyebrow').textContent = `${plural(ballots.length, 'person')} voted${group ? '. The winner is' : ''}`;
+  $('#vote-winner').textContent = group ? `${group.emoji} ${group.cuisine}` : 'No winner';
+  $('#vote-tie').textContent = !group ? 'Every cuisine that got votes was vetoed. Try another round.'
+    : tied.length ? `${tied.slice(0, -1).join(', ')} and ${tied.at(-1)} tied on ${plural(ranking[0].points, 'point')}, so one was picked at random.`
+      : '';
+  $('#vote-tally').replaceChildren(
+    ...ranking.map((r) => el('li', { class: r.cuisine === winner ? 'winner' : '' }, [
+      el('strong', {}, r.cuisine),
+      el('span', { class: 'points' }, `${plural(r.points, 'point')} · ${plural(r.voters, 'person')}`),
+      el('span', { class: 'bar', 'aria-hidden': 'true' }, el('span', { style: `width: ${(r.points / ranking[0].points) * 100}%` })),
+    ])),
+    ...vetoed.map((v) => el('li', { class: 'vetoed' }, [
+      el('strong', {}, v.cuisine),
+      el('span', { class: 'points' }, `🚫 Vetoed${v.points ? ` (had ${plural(v.points, 'point')})` : ''}`),
+    ])),
+  );
+  $('#vote-places-title').hidden = !group;
+  $('#vote-places').hidden = !group;
+  if (group) {
+    state.lastPickCuisine = group;
+    $('#vote-places-title').textContent = `${group.cuisine} places, best first`;
+    $('#vote-places').replaceChildren(...group.places.map(placeCard));
+  }
   show('view-vote-result');
 }
 
@@ -390,6 +420,30 @@ async function scan(event) {
   }
 }
 
+// ---------- installable app ----------
+
+function initInstall() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch((err) => console.warn('Service worker not registered', err));
+  }
+  // Chrome and Edge (Android, desktop) fire this when the app can be installed.
+  // Safari on iPhone has no such event: there it's Share -> Add to Home Screen.
+  let installPrompt = null;
+  window.addEventListener('beforeinstallprompt', (event) => {
+    event.preventDefault();
+    installPrompt = event;
+    $('#install').hidden = false;
+  });
+  $('#install').addEventListener('click', async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    await installPrompt.userChoice;
+    installPrompt = null;
+    $('#install').hidden = true;
+  });
+  window.addEventListener('appinstalled', () => { $('#install').hidden = true; });
+}
+
 // ---------- wiring ----------
 
 function init() {
@@ -420,6 +474,7 @@ function init() {
   $('#start-duel').addEventListener('click', startDuel);
   $('#start-vote').addEventListener('click', startVote);
   $('#vote-next').addEventListener('click', nextVoter);
+  $('#vote-veto').addEventListener('click', () => { state.vote.vetoMode = !state.vote.vetoMode; renderVote(); });
   $('#vote-finish').addEventListener('click', finishVote);
   $('#vote-cancel').addEventListener('click', () => show('view-results'));
   $('#vote-again').addEventListener('click', startVote);
@@ -433,3 +488,4 @@ function init() {
 }
 
 init();
+initInstall();

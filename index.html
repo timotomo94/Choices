@@ -6,7 +6,12 @@
   <title>Choices</title>
   <meta name="description" content="Find well-rated restaurants open near you, grouped by cuisine, and get help picking one.">
   <meta name="theme-color" content="#e8590c">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍽️</text></svg>">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Choices">
   <link rel="stylesheet" href="styles.css">
   <script src="config.js"></script>
   <script type="module" src="src/app.js"></script>
@@ -15,6 +20,7 @@
   <header class="topbar">
     <button class="brand" id="home" type="button">🍽️ Choices</button>
     <span class="badge" id="mode-badge" hidden>Demo data</span>
+    <button class="secondary install" type="button" id="install" hidden>Install app</button>
   </header>
 
   <main>
@@ -99,8 +105,9 @@
     <section id="view-vote" class="view" hidden>
       <p class="eyebrow" id="vote-count"></p>
       <h2 id="vote-title"></h2>
-      <p class="lead">Tap everything you'd be happy with. Tap again on the one you really want: it counts double.</p>
+      <p class="lead">Tap everything you'd be happy with. Tap again on the one you really want: it counts double. You can also veto one cuisine, which rules it out for everyone.</p>
       <p class="vote-saved" id="vote-saved" role="status" aria-live="polite"></p>
+      <button class="secondary veto-toggle" type="button" id="vote-veto" aria-pressed="false">🚫 Veto one cuisine</button>
       <div class="grid" id="vote-grid"></div>
       <div class="vote-bar">
         <button class="primary" type="button" id="vote-next">Done, pass the phone</button>
