@@ -120,6 +120,27 @@ button { font: inherit; cursor: pointer; }
 }
 
 .more { width: 100%; margin-top: 12px; }
+
+.vote-start { margin-bottom: 8px; }
+.vote-saved { color: var(--good); font-weight: 600; margin: 0 0 12px; min-height: 1.5em; }
+.cuisine .vote-badge { margin-top: 6px; font-size: .85rem; font-weight: 600; color: var(--accent); min-height: 1.3em; }
+.cuisine[data-points="1"], .cuisine[data-points="2"] { border-color: var(--accent); background: var(--accent-soft); }
+.cuisine[data-points="2"] { box-shadow: inset 0 0 0 2px var(--accent); }
+.vote-bar {
+  position: sticky; bottom: 0; display: flex; gap: 8px; padding: 12px 0;
+  background: var(--bg); border-top: 1px solid var(--border); margin-top: 12px;
+}
+.vote-bar .primary { flex: 2; }
+.vote-bar .secondary { flex: 1; }
+.vote-bar button:disabled { opacity: .5; cursor: not-allowed; }
+
+.tally { list-style: none; padding: 0; margin: 16px 0; display: grid; gap: 8px; }
+.tally li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; align-items: baseline; }
+.tally .points { color: var(--muted); font-size: .9rem; }
+.tally .bar { grid-column: 1 / -1; height: 8px; border-radius: 99px; background: var(--border); overflow: hidden; }
+.tally .bar span { display: block; height: 100%; border-radius: 99px; background: var(--muted); }
+.tally .winner strong { color: var(--accent); }
+.tally .winner .bar span { background: var(--accent); }
 .more:disabled { opacity: .6; cursor: progress; }
 
 .footer { text-align: center; color: var(--muted); font-size: .8rem; padding: 16px; }

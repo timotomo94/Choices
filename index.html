@@ -53,8 +53,9 @@
     <section id="view-results" class="view" hidden>
       <h2 id="results-title"></h2>
       <p class="lead" id="results-sub"></p>
+      <button class="primary vote-start" type="button" id="start-vote">🗳️ Vote with friends</button>
       <div class="actions">
-        <button class="primary" type="button" id="start-duel">🤔 Help me decide</button>
+        <button class="secondary" type="button" id="start-duel">🤔 Help me decide</button>
         <button class="secondary" type="button" id="surprise">🎲 Surprise me</button>
       </div>
       <div class="grid" id="cuisine-grid"></div>
@@ -92,6 +93,34 @@
         <button class="secondary" type="button" id="pick-more">See all options</button>
       </div>
       <button class="link" type="button" id="pick-back">← All cuisines</button>
+    </section>
+
+    <!-- 6. Group vote: pass the phone around -->
+    <section id="view-vote" class="view" hidden>
+      <p class="eyebrow" id="vote-count"></p>
+      <h2 id="vote-title"></h2>
+      <p class="lead">Tap everything you'd be happy with. Tap again on the one you really want: it counts double.</p>
+      <p class="vote-saved" id="vote-saved" role="status" aria-live="polite"></p>
+      <div class="grid" id="vote-grid"></div>
+      <div class="vote-bar">
+        <button class="primary" type="button" id="vote-next">Done, pass the phone</button>
+        <button class="secondary" type="button" id="vote-finish">Finish vote</button>
+      </div>
+      <button class="link" type="button" id="vote-cancel">← Cancel vote</button>
+    </section>
+
+    <!-- 7. Group vote result -->
+    <section id="view-vote-result" class="view" hidden>
+      <p class="eyebrow" id="vote-result-eyebrow"></p>
+      <h2 id="vote-winner"></h2>
+      <p class="lead" id="vote-tie"></p>
+      <ol class="tally" id="vote-tally"></ol>
+      <h3 id="vote-places-title"></h3>
+      <ol class="places" id="vote-places"></ol>
+      <div class="actions">
+        <button class="secondary" type="button" id="vote-again">🗳️ Vote again</button>
+        <button class="secondary" type="button" id="vote-result-back">All cuisines</button>
+      </div>
     </section>
   </main>
 
