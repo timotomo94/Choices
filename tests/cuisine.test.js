@@ -39,7 +39,6 @@ test('groupByCuisine groups, sorts groups by size and places by score', () => {
   assert.deepEqual(groups.map((g) => g.cuisine), ['Italian', 'Thai']);
   assert.deepEqual(groups[0].places.map((p) => p.name), ['I2', 'I1']);
   assert.equal(groups[0].nearest, 300);
-  assert.equal(groups[0].emoji, '🍝');
 });
 
 test('weightedPick respects weights', () => {

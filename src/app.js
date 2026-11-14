@@ -1,5 +1,7 @@
 import { filterPlaces, groupByCuisine, weightedPick } from './cuisine.js';
+import { CROSS, TICKS, loopPath, strikePath, tallyStrokes } from './marks.js';
 import { searchDemo, searchGoogle } from './places.js';
+import { seedFrom } from './prng.js';
 import { VETO, decideVote, tapBallot, vetoBallot } from './vote.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -117,6 +119,7 @@ function isDemo() {
 function show(id) {
   document.querySelectorAll('.view').forEach((v) => { v.hidden = v.id !== id; });
   window.scrollTo(0, 0);
+  refreshPenMarks();
 }
 
 function setStatus(text, isError = false) {
@@ -127,6 +130,7 @@ function setStatus(text, isError = false) {
 
 const fmtDistance = (m) => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`);
 const fmtPrice = (level) => (level == null ? '' : level === 0 ? 'Free' : '€'.repeat(level));
+const plural = (n, word) => `${n} ${n === 1 ? word : word === 'person' ? 'people' : `${word}s`}`;
 
 function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
@@ -139,24 +143,97 @@ function el(tag, attrs = {}, children = []) {
   return node;
 }
 
-function cuisineSummary(g) {
-  return `${g.count} place${g.count === 1 ? '' : 's'} · ★ ${g.avgRating.toFixed(1)} avg · ${fmtDistance(g.nearest)} nearest`;
+function svg(tag, attrs = {}, children = []) {
+  const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  node.append(...[].concat(children));
+  return node;
 }
 
-function placeCard(p) {
+/** A printed icon from the sprite in index.html. */
+const icon = (name, cls = '') => svg('svg', { class: `icon ${cls}`.trim(), 'aria-hidden': 'true' }, svg('use', { href: `#i-${name}` }));
+
+// ---------- pen marks ----------
+// Everything a person marks (ticks, loops, strikes, tallies) is drawn as a pen stroke.
+
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+// Clear space between text and the mark drawn on it, in ems: [sideways, up and down].
+const PEN_CLEARANCE = { loop: [0.2, 0.1], strike: [0.2, 0] };
+
+/**
+ * An SVG of pen strokes. The first `skip` strokes are already on the paper;
+ * the rest are drawn one after another.
+ */
+function penSvg(paths, { width, height, cls = '', animate = true, skip = 0, stagger = 110 }) {
+  return svg('svg', { class: `pen ${cls}`.trim(), viewBox: `0 0 ${width} ${height}`, 'aria-hidden': 'true' },
+    paths.map((d, i) => svg('path', {
+      d,
+      pathLength: 1,
+      ...(animate && i >= skip && { class: 'draw', style: `animation-delay: ${(i - skip) * stagger}ms` }),
+    })));
+}
+
+/** Draws a loop around, or a strike through, an element's text. The stroke is made to fit the text. */
+function penMark(target, kind, animate = true) {
+  target.querySelector(':scope > .pen-mark')?.remove();
+  target.dataset.pen = kind; // remembered, so the mark can be redrawn when the layout changes
+  const { width, height } = target.getBoundingClientRect();
+  if (!width) return; // hidden for now: refreshPenMarks() draws it once it shows
+  const style = getComputedStyle(target);
+  const em = parseFloat(style.fontSize);
+  const nib = parseFloat(style.getPropertyValue('--nib')) || 2.75;
+  // A loop also needs room for its own thickness and for the overshoot that runs outside its start.
+  const reach = kind === 'loop' ? nib * 2.75 : 0;
+  const [roomX, roomY] = PEN_CLEARANCE[kind].map((clear) => clear * em + reach);
+  const w = width + 2 * roomX;
+  const h = height + 2 * roomY;
+  const seed = seedFrom(target.textContent);
+  const stroke = kind === 'loop' ? loopPath(w, h, seed, nib) : strikePath(w, h, seed);
+  const mark = penSvg([stroke], { width: w, height: h, cls: 'pen-mark', animate });
+  Object.assign(mark.style, { left: `${-roomX}px`, top: `${-roomY}px`, width: `${w}px`, height: `${h}px` });
+  target.append(mark);
+}
+
+function clearPenMark(target) {
+  target.querySelector(':scope > .pen-mark')?.remove();
+  delete target.dataset.pen;
+}
+
+/** Redraws every loop and strike to fit its text again, e.g. after fonts load or the phone is turned. */
+function refreshPenMarks() {
+  document.querySelectorAll('[data-pen]').forEach((target) => penMark(target, target.dataset.pen, false));
+}
+
+/** Puts a cuisine in a big headline, sized so that its longest word fits the screen. */
+function setHeadline(target, text) {
+  target.textContent = text;
+  target.parentElement.style.setProperty('--chars', Math.max(...text.split(/\s+/).map((word) => word.length)));
+}
+
+// ---------- results ----------
+
+/** "7 places · ★ 4.5 avg · from 460 m": how many places a cuisine has, how good, how near. */
+function cuisineDesc(g) {
+  return [`${plural(g.count, 'place')} · `, icon('star', 'solid'), ` ${g.avgRating.toFixed(1)} avg · from ${fmtDistance(g.nearest)}`];
+}
+
+const rowNumber = (i) => el('span', { class: 'no', 'aria-hidden': 'true' }, String(i + 1).padStart(2, '0'));
+
+function placeRow(p) {
   const status = p.openNow === true ? el('span', { class: 'open' }, 'Open now')
     : p.openNow === false ? el('span', { class: 'closed' }, 'Closed') : el('span', {}, 'Hours unknown');
+  const price = fmtPrice(p.priceLevel);
   return el('li', { class: 'place' }, [
-    el('h3', {}, p.name),
-    el('div', { class: 'meta' }, [
-      el('span', { class: 'rating' }, `★ ${p.rating?.toFixed(1) ?? '–'}`),
-      el('span', {}, `${p.reviews.toLocaleString()} reviews`),
-      el('span', {}, fmtDistance(p.distance)),
-      fmtPrice(p.priceLevel) && el('span', {}, fmtPrice(p.priceLevel)),
-      status,
+    el('div', { class: 'place-head' }, [
+      el('h3', {}, p.name),
+      el('span', { class: 'leader', 'aria-hidden': 'true' }),
+      el('span', { class: 'rating', 'aria-label': p.rating == null ? 'No rating' : `Rated ${p.rating.toFixed(1)}` },
+        [p.rating?.toFixed(1) ?? '–', icon('star', 'solid')]),
     ]),
-    p.address && p.address !== 'Demo address' ? el('div', { class: 'meta' }, p.address) : null,
-    el('a', { href: p.mapsUrl, target: '_blank', rel: 'noopener' }, 'Open in Google Maps →'),
+    el('p', { class: 'meta' }, [`${p.reviews.toLocaleString()} reviews · ${fmtDistance(p.distance)}${price ? ` · ${price}` : ''} · `, status]),
+    p.address && p.address !== 'Demo address' ? el('p', { class: 'address' }, p.address) : null,
+    el('a', { href: p.mapsUrl, target: '_blank', rel: 'noopener' }, ['Open in Google Maps', icon('arrow-out')]),
   ]);
 }
 
@@ -166,35 +243,41 @@ function showResults() {
   state.groups = groupByCuisine(matches);
   const { groups } = state;
 
+  $('#results-criteria').textContent = [
+    criteria.openOnly ? 'Open now' : 'Open or closed',
+    `within ${fmtDistance(criteria.radius)}`,
+    `rated ${criteria.minRating.toFixed(1)}+`,
+    criteria.minReviews > 0 && `${criteria.minReviews.toLocaleString()}+ reviews`,
+  ].filter(Boolean).join(' · ');
   $('#results-title').textContent = groups.length
-    ? `${matches.length} places · ${groups.length} cuisine${groups.length === 1 ? '' : 's'}`
+    ? `${plural(matches.length, 'place')}, ${plural(groups.length, 'cuisine')}`
     : 'Nothing matches right now';
-  let sub = groups.length
-    ? 'Tap a cuisine to see the places, or let us help you decide.'
+  $('#results-sub').textContent = groups.length
+    ? 'Tap a cuisine to see its places, or let the table decide.'
     : 'Try a bigger radius, a lower minimum rating, or fewer required reviews.';
-  if (!search.demo) {
-    const left = Math.max(0, DAILY_REQUEST_LIMIT - requestsUsedToday());
-    sub += ` ${left} of ${DAILY_REQUEST_LIMIT} Google requests left today.`;
-  }
-  $('#results-sub').textContent = sub;
+  $('#results-actions').hidden = groups.length === 0;
   $('#start-vote').disabled = groups.length < 2;
   $('#start-duel').disabled = groups.length < 2;
-  $('#surprise').disabled = groups.length === 0;
 
-  const grid = $('#cuisine-grid');
-  grid.replaceChildren(...groups.map((g) => el('button', { type: 'button', class: 'cuisine', onclick: () => showDetail(g) }, [
-    el('span', { class: 'emoji', 'aria-hidden': 'true' }, g.emoji),
-    el('strong', {}, g.cuisine),
-    el('small', {}, cuisineSummary(g)),
-  ])));
+  $('#cuisine-list').replaceChildren(...groups.map((g, i) => el('li', {},
+    el('button', { type: 'button', class: 'row', onclick: () => showDetail(g) }, [
+      rowNumber(i),
+      el('span', { class: 'item' }, [el('span', { class: 'name' }, g.cuisine), el('span', { class: 'desc' }, cuisineDesc(g))]),
+      icon('arrow-right'),
+    ]))));
+  $('#cuisine-list').hidden = groups.length === 0;
+
   $('#load-more').hidden = !search.nextPageToken;
-  $('#load-more').textContent = search.demo ? 'Show more places' : 'Show more places (uses 1 request)';
+  const left = Math.max(0, DAILY_REQUEST_LIMIT - requestsUsedToday());
+  $('#requests-left').hidden = search.demo;
+  $('#requests-left').textContent = `${left} of ${DAILY_REQUEST_LIMIT} Google requests left today.${search.nextPageToken ? ' Showing more uses one.' : ''}`;
   show('view-results');
 }
 
 function showDetail(group) {
-  $('#detail-title').textContent = `${group.emoji} ${group.cuisine}`;
-  $('#place-list').replaceChildren(...group.places.map(placeCard));
+  $('#detail-count').textContent = `${plural(group.count, 'place')} · best first`;
+  $('#detail-title').textContent = group.cuisine;
+  $('#place-list').replaceChildren(...group.places.map(placeRow));
   show('view-detail');
 }
 
@@ -219,11 +302,7 @@ function renderDuel() {
   const { champion, challenger, round, rounds } = state.duel;
   $('#duel-progress').textContent = `Round ${round} of ${rounds}`;
   for (const [btn, g] of [[$('#duel-a'), champion], [$('#duel-b'), challenger]]) {
-    btn.replaceChildren(
-      el('span', { class: 'emoji', 'aria-hidden': 'true' }, g.emoji),
-      el('strong', {}, g.cuisine),
-      el('small', {}, cuisineSummary(g)),
-    );
+    btn.replaceChildren(el('span', { class: 'name' }, g.cuisine), el('span', { class: 'desc' }, cuisineDesc(g)));
   }
   show('view-duel');
 }
@@ -241,11 +320,12 @@ function chooseInDuel(side) {
 
 function showPick(group) {
   state.lastPickCuisine = group;
-  $('#pick-cuisine').textContent = `${group.emoji} ${group.cuisine}`;
   // Best few places in the cuisine are equally good candidates; pick among them.
   const place = weightedPick(group.places.slice(0, 3), (_, i) => 3 - i);
-  $('#pick-place').replaceChildren(el('ol', { class: 'places' }, placeCard(place)));
+  setHeadline($('#pick-cuisine'), group.cuisine);
+  $('#pick-place').replaceChildren(placeRow(place));
   show('view-pick');
+  penMark($('#pick-cuisine'), 'loop');
 }
 
 function surprise() {
@@ -258,57 +338,85 @@ function surprise() {
 
 // ---------- deciding: group vote (pass the phone around) ----------
 
-const plural = (n, word) => `${n} ${n === 1 ? word : word === 'person' ? 'people' : `${word}s`}`;
+// What a row's marks mean, for screen readers.
+const VOTE_STATE = { 0: '', 1: 'Happy with it', 2: 'Really want it, counts double', [VETO]: 'Vetoed' };
 
 function startVote() {
   // Cuisine names are fixed for the whole vote, so loading more places later can't disturb it.
   state.vote = { cuisines: state.groups.map((g) => g.cuisine), ballots: [], current: {}, vetoMode: false };
-  $('#vote-saved').textContent = '';
-  renderVote();
+  renderBallot();
   show('view-vote');
 }
 
-function tapVoteCard(cuisine) {
+/** A clean ballot for the next voter. `saved` tells them the previous vote went in. */
+function renderBallot({ saved = false } = {}) {
+  const groups = state.vote.cuisines.map((name) => state.groups.find((g) => g.cuisine === name)).filter(Boolean);
+  $('#vote-list').replaceChildren(...groups.map((g, i) => el('li', {}, el('button', {
+    type: 'button', class: 'row', 'data-cuisine': g.cuisine, 'data-points': 0, 'aria-pressed': 'false',
+    onclick: () => tapVoteRow(g.cuisine),
+  }, [
+    rowNumber(i),
+    el('span', { class: 'item' }, [
+      el('span', { class: 'name' }, el('span', { class: 'circled' }, g.cuisine)),
+      el('span', { class: 'desc' }, plural(g.count, 'place')),
+      el('span', { class: 'sr-only vote-state' }),
+    ]),
+    el('span', { class: 'tickbox', 'aria-hidden': 'true' }),
+  ]))));
+  syncBallot({ saved });
+}
+
+function tapVoteRow(cuisine) {
   const { vote } = state;
   vote.current = vote.vetoMode ? vetoBallot(vote.current, cuisine) : tapBallot(vote.current, cuisine);
   vote.vetoMode = false;
-  $('#vote-saved').textContent = '';
-  renderVote();
+  syncBallot();
 }
 
-function badgeFor(points) {
-  if (points === VETO) return '🚫 Vetoed';
-  if (points === 2) return '⭐ Really want it (×2)';
-  return points === 1 ? '👍 Happy with it' : '';
-}
-
-function renderVote() {
-  const { ballots, current, cuisines, vetoMode } = state.vote;
-  const vetoedCuisine = Object.keys(current).find((c) => current[c] === VETO);
-  const vetoButton = $('#vote-veto');
-  vetoButton.setAttribute('aria-pressed', String(vetoMode));
-  vetoButton.textContent = vetoMode ? '🚫 Now tap the cuisine to rule out'
-    : vetoedCuisine ? `🚫 Vetoed: ${vetoedCuisine} (tap to change)` : '🚫 Veto one cuisine';
-  $('#vote-grid').classList.toggle('veto-mode', vetoMode);
+/**
+ * Brings the ballot in line with the current voter's picks. Only rows whose marks
+ * changed are redrawn, so only new strokes animate.
+ */
+function syncBallot({ saved = false } = {}) {
+  const { ballots, current, vetoMode } = state.vote;
+  const voter = ballots.length + 1;
   const picked = Object.keys(current).length > 0;
-  $('#vote-count').textContent = ballots.length ? `${plural(ballots.length, 'person')} voted so far` : 'Group vote';
-  $('#vote-title').textContent = `Voter ${ballots.length + 1}, what do you fancy?`;
+  const vetoedCuisine = Object.keys(current).find((c) => current[c] === VETO);
+
+  const count = $('#vote-count');
+  count.textContent = saved ? `Saved. Pass the phone to voter ${voter}.`
+    : ballots.length ? `Group vote · ${plural(ballots.length, 'person')} voted so far` : 'Group vote';
+  count.classList.toggle('saved', saved);
+  $('#vote-title').textContent = `Voter ${voter},`;
   $('#vote-next').disabled = !picked;
   $('#vote-finish').disabled = !picked && ballots.length === 0;
 
-  const groups = cuisines.map((name) => state.groups.find((g) => g.cuisine === name)).filter(Boolean);
-  $('#vote-grid').replaceChildren(...groups.map((g) => {
-    const points = current[g.cuisine] ?? 0;
-    return el('button', {
-      type: 'button', class: 'cuisine', 'data-points': points, 'aria-pressed': String(points !== 0),
-      onclick: () => tapVoteCard(g.cuisine),
-    }, [
-      el('span', { class: 'emoji', 'aria-hidden': 'true' }, g.emoji),
-      el('strong', {}, g.cuisine),
-      el('small', {}, `${plural(g.count, 'place')} · ★ ${g.avgRating.toFixed(1)} avg`),
-      el('span', { class: 'vote-badge' }, badgeFor(points)),
-    ]);
-  }));
+  $('#vote-veto').setAttribute('aria-pressed', String(vetoMode));
+  $('#vote-veto-label').textContent = vetoMode ? 'Now tap the cuisine to rule out'
+    : vetoedCuisine ? `Vetoed: ${vetoedCuisine} (tap to change)` : 'Veto one cuisine';
+  $('#vote-list').classList.toggle('veto-mode', vetoMode);
+
+  for (const row of $('#vote-list').querySelectorAll('.row')) {
+    const points = current[row.dataset.cuisine] ?? 0;
+    const before = Number(row.dataset.points);
+    if (points !== before) markRow(row, points, before);
+  }
+}
+
+/** Marks one ballot row: ticks in its box (a cross for a veto), a loop round a favourite, a strike through a veto. */
+function markRow(row, points, before) {
+  row.dataset.points = points;
+  row.setAttribute('aria-pressed', String(points !== 0));
+  row.querySelector('.vote-state').textContent = VOTE_STATE[points];
+
+  const strokes = points === VETO ? CROSS : TICKS.slice(0, points);
+  const kept = points > 0 && before > 0 ? Math.min(points, before) : 0; // ticks already there aren't drawn again
+  row.querySelector('.tickbox').replaceChildren(...(strokes.length ? [penSvg(strokes, { width: 40, height: 40, skip: kept })] : []));
+
+  const name = row.querySelector('.circled');
+  if (points === 2) penMark(name, 'loop');
+  else if (points === VETO) penMark(name, 'strike');
+  else clearPenMark(name);
 }
 
 /** Stores the current person's picks and clears the screen for the next person. */
@@ -322,9 +430,33 @@ function submitBallot() {
 
 function nextVoter() {
   submitBallot();
-  renderVote();
-  $('#vote-saved').textContent = `Vote saved. Pass the phone to voter ${state.vote.ballots.length + 1}.`;
+  renderBallot({ saved: true });
   window.scrollTo(0, 0);
+  // A fresh sheet slides in, so it's obvious the screen now belongs to the next person.
+  if (!reducedMotion.matches) {
+    $('#view-vote').animate?.(
+      [{ opacity: 0, transform: 'translateX(28px)' }, { opacity: 1, transform: 'none' }],
+      { duration: 280, easing: 'cubic-bezier(.2, .7, .2, 1)' },
+    );
+  }
+}
+
+/** Points as tally strokes, the way you'd keep score on paper. Past 25 a figure is easier to read. */
+function tallyMarks(points, cuisine) {
+  if (points > 25) return el('span', { class: 'figure' }, String(points));
+  const { width, height, paths } = tallyStrokes(points, seedFrom(cuisine));
+  const marks = penSvg(paths, { width, height, cls: 'tally', stagger: 70 });
+  Object.assign(marks.style, { width: `${width}px`, height: `${height}px` });
+  return marks;
+}
+
+function countRow(cuisine, marks, note, cls) {
+  return el('li', { class: cls }, [
+    el('span', { class: 'name' }, el('span', { class: 'circled' }, cuisine)),
+    el('span', { class: 'leader', 'aria-hidden': 'true' }),
+    el('span', { class: 'marks', 'aria-hidden': 'true' }, marks),
+    el('span', { class: 'note' }, note),
+  ]);
 }
 
 function finishVote() {
@@ -332,31 +464,37 @@ function finishVote() {
   const { ballots } = state.vote;
   const { ranking, vetoed, winner, tied } = decideVote(ballots);
   const group = state.groups.find((g) => g.cuisine === winner);
+  const headline = $('#vote-winner');
 
   $('#vote-result-eyebrow').textContent = `${plural(ballots.length, 'person')} voted${group ? '. The winner is' : ''}`;
-  $('#vote-winner').textContent = group ? `${group.emoji} ${group.cuisine}` : 'No winner';
-  $('#vote-tie').textContent = !group ? 'Every cuisine that got votes was vetoed. Try another round.'
+  setHeadline(headline, group ? group.cuisine : 'No winner');
+  headline.parentElement.classList.toggle('plain', !group);
+  const remark = !group ? 'Every cuisine that got votes was vetoed. Try another round.'
     : tied.length ? `${tied.slice(0, -1).join(', ')} and ${tied.at(-1)} tied on ${plural(ranking[0].points, 'point')}, so one was picked at random.`
       : '';
+  $('#vote-tie').textContent = remark;
+  $('#vote-tie').hidden = !remark;
+  // The winner heads the count, even when a tie was broken in favour of a name further down.
+  const order = [...ranking].sort((x, y) => (y.cuisine === winner) - (x.cuisine === winner));
   $('#vote-tally').replaceChildren(
-    ...ranking.map((r) => el('li', { class: r.cuisine === winner ? 'winner' : '' }, [
-      el('strong', {}, r.cuisine),
-      el('span', { class: 'points' }, `${plural(r.points, 'point')} · ${plural(r.voters, 'person')}`),
-      el('span', { class: 'bar', 'aria-hidden': 'true' }, el('span', { style: `width: ${(r.points / ranking[0].points) * 100}%` })),
-    ])),
-    ...vetoed.map((v) => el('li', { class: 'vetoed' }, [
-      el('strong', {}, v.cuisine),
-      el('span', { class: 'points' }, `🚫 Vetoed${v.points ? ` (had ${plural(v.points, 'point')})` : ''}`),
-    ])),
+    ...order.map((r) => countRow(r.cuisine, tallyMarks(r.points, r.cuisine),
+      `${r.cuisine === winner ? 'Winner · ' : ''}${plural(r.points, 'point')} · ${plural(r.voters, 'person')}`,
+      r.cuisine === winner ? 'winner' : '')),
+    ...vetoed.map((v) => countRow(v.cuisine, penSvg(CROSS, { width: 40, height: 40 }),
+      `Vetoed${v.points ? ` · had ${plural(v.points, 'point')}` : ''}`, 'vetoed')),
   );
   $('#vote-places-title').hidden = !group;
   $('#vote-places').hidden = !group;
   if (group) {
     state.lastPickCuisine = group;
     $('#vote-places-title').textContent = `${group.cuisine} places, best first`;
-    $('#vote-places').replaceChildren(...group.places.map(placeCard));
+    $('#vote-places').replaceChildren(...group.places.map(placeRow));
   }
   show('view-vote-result');
+  // Loops and strikes are fitted to their text, so they go on once the view is showing.
+  if (group) penMark(headline, 'loop');
+  else clearPenMark(headline);
+  $('#vote-tally').querySelectorAll('.vetoed .circled').forEach((name) => penMark(name, 'strike'));
 }
 
 // ---------- scanning ----------
@@ -460,7 +598,11 @@ function init() {
 
   const syncOutputs = () => {
     $('#radius-out').textContent = fmtDistance(Number(f.radius.value));
-    $('#rating-out').textContent = `${Number(f.minRating.value).toFixed(1)} ★`;
+    $('#rating-out').textContent = Number(f.minRating.value).toFixed(1);
+    // How far along each slider is, for the inked part of its track.
+    for (const range of [f.radius, f.minRating]) {
+      range.style.setProperty('--p', (range.value - range.min) / (range.max - range.min));
+    }
   };
   f.addEventListener('input', syncOutputs);
   syncOutputs();
@@ -474,7 +616,7 @@ function init() {
   $('#start-duel').addEventListener('click', startDuel);
   $('#start-vote').addEventListener('click', startVote);
   $('#vote-next').addEventListener('click', nextVoter);
-  $('#vote-veto').addEventListener('click', () => { state.vote.vetoMode = !state.vote.vetoMode; renderVote(); });
+  $('#vote-veto').addEventListener('click', () => { state.vote.vetoMode = !state.vote.vetoMode; syncBallot(); });
   $('#vote-finish').addEventListener('click', finishVote);
   $('#vote-cancel').addEventListener('click', () => show('view-results'));
   $('#vote-again').addEventListener('click', startVote);
@@ -485,6 +627,26 @@ function init() {
   $('#pick-more').addEventListener('click', () => showDetail(state.lastPickCuisine));
   $('#duel-a').addEventListener('click', () => chooseInDuel('a'));
   $('#duel-b').addEventListener('click', () => chooseInDuel('b'));
+  initPenMarks();
+}
+
+function initPenMarks() {
+  // Pen marks that are part of the page itself: the key on the ballot, the veto button, the tick in a checkbox.
+  const marks = { tick: TICKS.slice(0, 1), ticks: TICKS, cross: CROSS };
+  for (const holder of document.querySelectorAll('[data-mark]')) {
+    holder.prepend(penSvg(marks[holder.dataset.mark], { width: 40, height: 40, animate: false }));
+  }
+
+  // The loop in the headline is fitted to the word, so it waits for the real typeface.
+  (document.fonts?.ready ?? Promise.resolve()).then(() => penMark($('#hero-word'), 'loop'));
+
+  // Loops and strikes are sized to their text: refit them when the width changes (turning the phone).
+  let width = window.innerWidth;
+  window.addEventListener('resize', () => {
+    if (window.innerWidth === width) return; // only the height changed, e.g. the address bar hiding
+    width = window.innerWidth;
+    refreshPenMarks();
+  });
 }
 
 init();

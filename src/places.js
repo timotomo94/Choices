@@ -2,6 +2,7 @@
 // { places: [{ id, name, cuisine, rating, reviews, priceLevel (0-4|null), lat, lng, address, mapsUrl, openNow (bool|undefined), distance }],
 //   nextPageToken: string|null }
 import { cuisineOf, distanceMeters, isFoodPlace, isOpenAt } from './cuisine.js';
+import { mulberry32 } from './prng.js';
 
 // ---------- Google Places API (New): Text Search over REST ----------
 //
@@ -109,18 +110,8 @@ const DEMO_NAMES = {
   steak_house: ['The Butcher Block'],
 };
 
-// Small deterministic PRNG so demo results are stable for a given location.
-function mulberry32(seed) {
-  return () => {
-    seed |= 0;
-    seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
 export async function searchDemo({ center, radius, pageToken }) {
+  // Seeded by the location, so demo results are stable for a given spot.
   const rand = mulberry32(Math.round(center.lat * 1000) * 31 + Math.round(center.lng * 1000));
   const places = [];
   for (const [type, names] of Object.entries(DEMO_NAMES)) {
