@@ -4,128 +4,155 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Choices</title>
-  <meta name="description" content="Find well-rated restaurants open near you, grouped by cuisine, and get help picking one.">
-  <meta name="theme-color" content="#e8590c">
+  <meta name="description" content="Find well-rated restaurants open near you, grouped by cuisine, and vote on where to eat.">
+  <meta name="theme-color" content="#f4cfc6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0e2a20" media="(prefers-color-scheme: dark)">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Choices">
+  <link rel="preload" href="fonts/caprasimo-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/archivo-latin-wdth-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="styles.css">
   <script src="config.js"></script>
   <script type="module" src="src/app.js"></script>
 </head>
 <body>
-  <header class="topbar">
-    <button class="brand" id="home" type="button">🍽️ Choices</button>
-    <span class="badge" id="mode-badge" hidden>Demo data</span>
-    <button class="secondary install" type="button" id="install" hidden>Install app</button>
+  <!-- Printed icons. Pen marks (ticks, loops, strikes) are drawn by src/app.js instead. -->
+  <svg class="sprite" aria-hidden="true">
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M4 12h15M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M20 12H5M11 6l-6 6 6 6"/></symbol>
+    <symbol id="i-arrow-out" viewBox="0 0 24 24"><path d="M7 17 17 7M8 7h9v9"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 2.6 2.84 6.1 6.66.83-4.9 4.6 1.27 6.6L12 17.5l-5.87 3.23 1.27-6.6-4.9-4.6 6.66-.83z"/></symbol>
+  </svg>
+
+  <header class="masthead">
+    <button class="wordmark" id="home" type="button">Choices</button>
+    <span class="stamp" id="mode-badge" hidden>Demo data</span>
+    <button class="chip" type="button" id="install" hidden>Install app</button>
   </header>
 
   <main>
     <!-- 1. Start: criteria + scan -->
     <section id="view-start" class="view">
-      <h1>Hungry? Let's narrow it down.</h1>
-      <p class="lead">We find well-rated places that are open right now, group them by cuisine, and help you pick one.</p>
+      <h1>So, where are we <span class="circled" id="hero-word">eating?</span></h1>
+      <p class="lead">Scan what’s open nearby, sort it by cuisine, then let the table vote.</p>
 
-      <form id="criteria" class="card">
+      <form id="criteria">
         <label class="field">
-          <span>Search radius <output id="radius-out">1.5 km</output></span>
+          <span class="field-head"><span class="label">Search radius</span><output id="radius-out">1.5 km</output></span>
           <input type="range" name="radius" min="500" max="5000" step="250" value="1500">
         </label>
         <label class="field">
-          <span>Minimum rating <output id="rating-out">4.2 ★</output></span>
+          <span class="field-head">
+            <span class="label">Minimum rating</span>
+            <output><span id="rating-out">4.2</span><svg class="icon solid" aria-hidden="true"><use href="#i-star"/></svg></output>
+          </span>
           <input type="range" name="minRating" min="3" max="4.8" step="0.1" value="4.2">
         </label>
-        <label class="field">
-          <span>Minimum number of reviews</span>
-          <input type="number" name="minReviews" min="0" step="10" value="30" inputmode="numeric">
+        <label class="field field-inline">
+          <span class="label">Minimum reviews</span>
+          <span class="leader" aria-hidden="true"></span>
+          <input type="number" name="minReviews" min="0" step="1" value="30" inputmode="numeric">
         </label>
-        <label class="check"><input type="checkbox" name="openOnly" checked> Open now only</label>
+        <label class="check">
+          <input type="checkbox" name="openOnly" checked>
+          <span class="tickbox" data-mark="tick" aria-hidden="true"></span>
+          <span>Only places that are open now</span>
+        </label>
+
+        <button class="primary" type="submit" id="scan">Find food near me<svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
+        <p class="status" id="status" role="status" aria-live="polite"></p>
 
         <details class="advanced">
           <summary>Google Maps API key</summary>
-          <p class="hint">Without a key the app shows demo data. A key entered here is stored only in this browser.</p>
-          <input type="password" name="apiKey" placeholder="AIza…" autocomplete="off" spellcheck="false">
+          <p class="smallprint">Without a key the app shows demo data. A key entered here is stored only in this browser.</p>
+          <input type="password" name="apiKey" placeholder="AIza…" autocomplete="off" spellcheck="false" aria-label="Google Maps API key">
         </details>
-
-        <button class="primary" type="submit" id="scan">📍 Find food near me</button>
-        <p class="status" id="status" role="status" aria-live="polite"></p>
       </form>
     </section>
 
     <!-- 2. Results: cuisines -->
     <section id="view-results" class="view" hidden>
+      <p class="eyebrow" id="results-criteria"></p>
       <h2 id="results-title"></h2>
       <p class="lead" id="results-sub"></p>
-      <button class="primary vote-start" type="button" id="start-vote">🗳️ Vote with friends</button>
-      <div class="actions">
-        <button class="secondary" type="button" id="start-duel">🤔 Help me decide</button>
-        <button class="secondary" type="button" id="surprise">🎲 Surprise me</button>
+      <div id="results-actions">
+        <button class="primary" type="button" id="start-vote">Vote with friends</button>
+        <div class="actions">
+          <button class="secondary" type="button" id="start-duel">Help me decide</button>
+          <button class="secondary" type="button" id="surprise">Surprise me</button>
+        </div>
       </div>
-      <div class="grid" id="cuisine-grid"></div>
-      <button class="secondary more" type="button" id="load-more" hidden>Show more places</button>
+      <ol class="menu" id="cuisine-list"></ol>
+      <button class="secondary wide" type="button" id="load-more" hidden>Show more places</button>
+      <p class="smallprint" id="requests-left" hidden></p>
       <p class="status error" id="more-status" role="status" aria-live="polite"></p>
-      <button class="link" type="button" id="back-start">← Change criteria</button>
+      <button class="link" type="button" id="back-start"><svg class="icon" aria-hidden="true"><use href="#i-arrow-left"/></svg>Change criteria</button>
     </section>
 
     <!-- 3. One cuisine: its restaurants -->
     <section id="view-detail" class="view" hidden>
-      <button class="link" type="button" id="back-results">← All cuisines</button>
+      <button class="link" type="button" id="back-results"><svg class="icon" aria-hidden="true"><use href="#i-arrow-left"/></svg>All cuisines</button>
+      <p class="eyebrow" id="detail-count"></p>
       <h2 id="detail-title"></h2>
       <ol class="places" id="place-list"></ol>
     </section>
 
     <!-- 4. This-or-that duel between cuisines -->
     <section id="view-duel" class="view" hidden>
+      <p class="eyebrow" id="duel-progress"></p>
       <h2>Which sounds better right now?</h2>
-      <p class="lead" id="duel-progress"></p>
       <div class="duel">
         <button type="button" class="duel-option" id="duel-a"></button>
-        <span class="vs">or</span>
+        <span class="vs" aria-hidden="true">or</span>
         <button type="button" class="duel-option" id="duel-b"></button>
       </div>
-      <button class="link" type="button" id="duel-cancel">← Back to all cuisines</button>
+      <button class="link" type="button" id="duel-cancel"><svg class="icon" aria-hidden="true"><use href="#i-arrow-left"/></svg>Back to all cuisines</button>
     </section>
 
     <!-- 5. The pick -->
     <section id="view-pick" class="view" hidden>
-      <p class="eyebrow">Tonight you're having</p>
-      <h2 id="pick-cuisine"></h2>
-      <div id="pick-place"></div>
+      <p class="eyebrow">You’re having</p>
+      <h2 class="headline"><span class="circled" id="pick-cuisine"></span></h2>
+      <ol class="places solo" id="pick-place"></ol>
       <div class="actions">
-        <button class="secondary" type="button" id="pick-again">🎲 Spin again</button>
+        <button class="secondary" type="button" id="pick-again">Spin again</button>
         <button class="secondary" type="button" id="pick-more">See all options</button>
       </div>
-      <button class="link" type="button" id="pick-back">← All cuisines</button>
+      <button class="link" type="button" id="pick-back"><svg class="icon" aria-hidden="true"><use href="#i-arrow-left"/></svg>All cuisines</button>
     </section>
 
     <!-- 6. Group vote: pass the phone around -->
     <section id="view-vote" class="view" hidden>
-      <p class="eyebrow" id="vote-count"></p>
-      <h2 id="vote-title"></h2>
-      <p class="lead">Tap everything you'd be happy with. Tap again on the one you really want: it counts double. You can also veto one cuisine, which rules it out for everyone.</p>
-      <p class="vote-saved" id="vote-saved" role="status" aria-live="polite"></p>
-      <button class="secondary veto-toggle" type="button" id="vote-veto" aria-pressed="false">🚫 Veto one cuisine</button>
-      <div class="grid" id="vote-grid"></div>
+      <p class="eyebrow" id="vote-count" role="status" aria-live="polite"></p>
+      <h2 class="voter"><span id="vote-title"></span> <small>what do you fancy?</small></h2>
+      <ul class="key">
+        <li data-mark="tick"><span><b>Tap once</b> on everything you’d be happy with.</span></li>
+        <li data-mark="ticks"><span><b>Tap again</b> on the one you really want. It counts double.</span></li>
+      </ul>
+      <button class="secondary wide veto-toggle" type="button" id="vote-veto" aria-pressed="false" data-mark="cross"><span id="vote-veto-label">Veto one cuisine</span></button>
+      <ol class="menu ballot" id="vote-list"></ol>
       <div class="vote-bar">
         <button class="primary" type="button" id="vote-next">Done, pass the phone</button>
         <button class="secondary" type="button" id="vote-finish">Finish vote</button>
       </div>
-      <button class="link" type="button" id="vote-cancel">← Cancel vote</button>
+      <button class="link" type="button" id="vote-cancel"><svg class="icon" aria-hidden="true"><use href="#i-arrow-left"/></svg>Cancel vote</button>
     </section>
 
     <!-- 7. Group vote result -->
     <section id="view-vote-result" class="view" hidden>
       <p class="eyebrow" id="vote-result-eyebrow"></p>
-      <h2 id="vote-winner"></h2>
+      <h2 class="headline"><span class="circled" id="vote-winner"></span></h2>
       <p class="lead" id="vote-tie"></p>
-      <ol class="tally" id="vote-tally"></ol>
-      <h3 id="vote-places-title"></h3>
+      <p class="section-label">The count</p>
+      <ol class="count" id="vote-tally"></ol>
+      <p class="section-label" id="vote-places-title"></p>
       <ol class="places" id="vote-places"></ol>
       <div class="actions">
-        <button class="secondary" type="button" id="vote-again">🗳️ Vote again</button>
+        <button class="secondary" type="button" id="vote-again">Vote again</button>
         <button class="secondary" type="button" id="vote-result-back">All cuisines</button>
       </div>
     </section>

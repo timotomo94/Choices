@@ -49,15 +49,28 @@ Turn it on once under **Settings → Pages → Build and deployment → Source: 
 
 | Element | Where | What it does |
 |---|---|---|
-| Page and views | `index.html`, `styles.css` | Mobile-first single page: criteria, cuisine grid, cuisine detail, duel, pick. Light and dark theme. |
+| Page and views | `index.html`, `styles.css` | Mobile-first single page: criteria, cuisine list, cuisine detail, duel, pick, ballot, vote result. Light and dark theme. See *Design* below. |
 | Config | `config.js` | Public runtime config (the restricted API key). |
 | Places provider | `src/places.js` | Calls Places API (New) Text Search over REST. Google filters by open-now and minimum rating, and pages through up to 60 results. Leaves out non-food places (hotels, landmarks) and normalizes results. Also contains the demo-data provider. |
 | Cuisine logic | `src/cuisine.js` | Maps Google place types to cuisines, filters by your criteria, ranks places by review-weighted rating, groups and sorts cuisines, makes weighted random picks. Pure functions, unit-tested. |
 | Vote logic | `src/vote.js` | Group vote: what a tap does to a ballot, vetoes, adding up ballots, random tie-break. Pure functions, unit-tested. |
+| Pen marks | `src/marks.js`, `src/prng.js` | Generates the hand-drawn strokes as SVG paths: loops fitted round a word, strikes, ticks, tally strokes. Seeded, so the same word always gets the same loop. Pure functions, unit-tested. |
+| Typefaces | `fonts/` | Caprasimo and Archivo, hosted with the site (no requests to Google Fonts, and they work offline). Both are under the SIL Open Font License; the licence texts are in the folder. |
 | Installable app | `manifest.webmanifest`, `sw.js`, `icons/` | Lets you add the site to a phone's home screen. The service worker is network-first, so new deploys show up on the next load, and the app still opens offline. |
-| App controller | `src/app.js` | Geolocation, scan flow, rendering, the group vote, the "this or that" duel and Surprise me. Saves your criteria in localStorage. |
-| Tests | `tests/` | `node:test` unit tests for the cuisine and vote logic. |
+| App controller | `src/app.js` | Geolocation, scan flow, rendering, drawing pen marks, the group vote, the "this or that" duel and Surprise me. Saves your criteria in localStorage. |
+| Tests | `tests/` | `node:test` unit tests for the cuisine, vote and pen-mark logic. |
 | CI/CD | `.github/workflows/pages.yml` | Runs the tests, then publishes to GitHub Pages. |
+
+### Design
+
+The app is styled as a menu printed on pink butcher paper and marked up in red pen.
+
+- **Two inks.** `--ink` (forest green) is everything printed: type, rules, buttons. `--pen` (vermilion) is everything a person marks: ticks, the loop round a favourite, the strike through a veto, tally strokes, the slider thumb. In dark mode the paper turns forest green and the ink pink.
+- **Two typefaces.** Caprasimo for names and headlines. Archivo for everything else, set narrow and in capitals for the small print.
+- **Lists, not cards.** Cuisines and places are ruled, numbered lists. A place's rating sits at the end of a dotted leader, like a price on a menu.
+- **Pen marks are generated, not images.** A loop is drawn to fit the word it goes round and animates as a stroke; it is redrawn when the layout changes. With "reduce motion" on, marks appear without animation.
+
+All colours and sizes are tokens at the top of `styles.css`.
 
 ### Possible next steps
 

@@ -36,15 +36,6 @@ export const CUISINE_TYPES = {
   sandwich_shop: 'Sandwiches',
 };
 
-export const CUISINE_EMOJI = {
-  American: '🇺🇸', Barbecue: '🍖', Brazilian: '🇧🇷', 'Breakfast & Brunch': '🥞', Chinese: '🥡',
-  'Fast food': '🍟', French: '🥐', Greek: '🥙', Burgers: '🍔', Indian: '🍛', Indonesian: '🍢',
-  Italian: '🍝', Japanese: '🍱', Korean: '🍲', Lebanese: '🧆', Mediterranean: '🫒', Mexican: '🌮',
-  'Middle Eastern': '🧆', Pizza: '🍕', Ramen: '🍜', Seafood: '🦞', Spanish: '🥘', Steakhouse: '🥩',
-  Sushi: '🍣', Thai: '🌶️', Turkish: '🥙', Vegan: '🥗', Vegetarian: '🥦', Vietnamese: '🍜',
-  Sandwiches: '🥪', German: '🥨', Bavarian: '🥨', Chicken: '🍗', Asian: '🥢', Other: '🍽️',
-};
-
 // Primary types that mean "this is mainly a place to eat". Anything else (hotels,
 // landmarks, museums with a restaurant inside) is left out.
 const FOOD_PRIMARY_TYPES = new Set([
@@ -147,7 +138,7 @@ export function groupByCuisine(places) {
     const avgRating = list.reduce((s, p) => s + (p.rating ?? 0), 0) / list.length;
     const avgScore = list.reduce((s, p) => s + score(p), 0) / list.length;
     const nearest = Math.min(...list.map((p) => p.distance ?? Infinity));
-    return { cuisine, emoji: CUISINE_EMOJI[cuisine] ?? '🍽️', places: list, count: list.length, avgRating, avgScore, nearest };
+    return { cuisine, places: list, count: list.length, avgRating, avgScore, nearest };
   }).sort((a, b) => (a.cuisine === 'Other') - (b.cuisine === 'Other') || b.count - a.count || b.avgScore - a.avgScore);
 }
 
